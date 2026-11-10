@@ -10,8 +10,9 @@ import { refreshRemindersSafely } from "./reminders";
 
 export class UserError extends Error {}
 
-async function nextSeq(tx: Tx, customerId: string): Promise<number> {
-  const agg = await tx.issue.aggregate({ where: { customerId }, _max: { customerSeq: true } });
+/** 番号在同一服务项目内递增 */
+export async function nextSeq(tx: Tx, serviceProjectId: string): Promise<number> {
+  const agg = await tx.issue.aggregate({ where: { serviceProjectId }, _max: { customerSeq: true } });
   return (agg._max.customerSeq ?? 0) + 1;
 }
 
@@ -25,10 +26,11 @@ export async function setTags(tx: Tx, issueId: string, raw: string): Promise<str
   return names;
 }
 
-async function checkRefs(tx: Tx, customerId: string, f: IssueFieldsInput): Promise<void> {
+async function checkRefs(tx: Tx, customerId: string, serviceProjectId: string, f: IssueFieldsInput): Promise<void> {
   if (f.meetingBatchId) {
     const m = await tx.meetingBatch.findUnique({ where: { id: f.meetingBatchId } });
     if (!m || m.customerId !== customerId) throw new UserError("会谈不属于该客户");
+    if (m.serviceProjectId && m.serviceProjectId !== serviceProjectId) throw new UserError("会谈属于其他服务项目");
   }
   if (f.reporterContactId) {
     const c = await tx.contact.findUnique({ where: { id: f.reporterContactId } });
@@ -64,7 +66,33 @@ function scalarData(f: IssueFieldsInput) {
   };
 }
 
+/** 已有项目，或在指定客户下按名称找到/新建项目 */
+export async function resolveProject(
+  tx: Tx,
+  input: { serviceProjectId: string | null; newProjectName: string },
+  customerId: string,
+  user: SessionUser,
+): Promise<string> {
+  if (input.serviceProjectId) {
+    const p = await tx.serviceProject.findUnique({ where: { id: input.serviceProjectId } });
+    if (!p || p.customerId !== customerId) throw new UserError("服务项目不属于该客户");
+    return p.id;
+  }
+  const name = input.newProjectName.trim();
+  if (!name) throw new UserError("请选择或新建服务项目");
+  const exists = await tx.serviceProject.findUnique({ where: { customerId_name: { customerId, name } } });
+  if (exists) return exists.id;
+  const p = await tx.serviceProject.create({ data: { customerId, name } });
+  await writeAudit(tx, { entityType: "project", entityId: p.id, action: "create", actorId: user.id, summary: `新建服务项目 ${name}` });
+  return p.id;
+}
+
 async function resolveCustomer(tx: Tx, input: IssueCreateInput, user: SessionUser): Promise<string> {
+  if (input.serviceProjectId) {
+    const p = await tx.serviceProject.findUnique({ where: { id: input.serviceProjectId } });
+    if (!p) throw new UserError("服务项目不存在");
+    return p.customerId;
+  }
   if (input.customerId) {
     const c = await tx.customer.findUnique({ where: { id: input.customerId } });
     if (!c) throw new UserError("客户不存在");
@@ -81,18 +109,20 @@ async function resolveCustomer(tx: Tx, input: IssueCreateInput, user: SessionUse
   return c.id;
 }
 
-export async function createIssue(input: IssueCreateInput, user: SessionUser): Promise<{ id: string; customerId: string }> {
+export async function createIssue(input: IssueCreateInput, user: SessionUser): Promise<{ id: string; customerId: string; serviceProjectId: string }> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const result = await prisma.$transaction(async (tx) => {
         const customerId = await resolveCustomer(tx, input, user);
-        await checkRefs(tx, customerId, input);
-        const seq = await nextSeq(tx, customerId);
+        const serviceProjectId = await resolveProject(tx, input, customerId, user);
+        await checkRefs(tx, customerId, serviceProjectId, input);
+        const seq = await nextSeq(tx, serviceProjectId);
         const data = scalarData(input);
         const issue = await tx.issue.create({
           data: {
             ...data,
             customerId,
+            serviceProjectId,
             customerSeq: seq,
             recordedOn: data.recordedOn ?? ymdToDate(todayShanghai()),
             createdById: user.id,
@@ -106,7 +136,7 @@ export async function createIssue(input: IssueCreateInput, user: SessionUser): P
           if (clean) await tx.issueEntry.create({ data: { issueId: issue.id, kind, body: clean, authorId: user.id } });
         }
         await recordIssueEvent(tx, issue.id, user.id, "create", `创建课题 #${seq}`, { after: { title: issue.title, status: issue.status } });
-        return { id: issue.id, customerId };
+        return { id: issue.id, customerId, serviceProjectId };
       });
       refreshRemindersSafely(result.id);
       return result;
@@ -152,7 +182,7 @@ export async function updateIssue(issueId: string, f: IssueFieldsInput, user: Se
   await prisma.$transaction(async (tx) => {
     const cur = await tx.issue.findUnique({ where: { id: issueId }, include: { assignees: true, tags: { include: { tag: true } } } });
     if (!cur) throw new UserError("课题不存在");
-    await checkRefs(tx, cur.customerId, f);
+    await checkRefs(tx, cur.customerId, cur.serviceProjectId, f);
     const data = scalarData(f);
     const before: Record<string, string> = {};
     const after: Record<string, string> = {};

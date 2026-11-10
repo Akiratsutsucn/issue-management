@@ -178,10 +178,28 @@ model Customer {
 
   contacts  Contact[]
   meetings  MeetingBatch[]
+  projects  ServiceProject[]
   issues    Issue[]
   overrides CustomerPriorityOverride[]
 
   @@map("customers")
+}
+
+/// 服务项目：客户下的一个服务合同或实施项目，课题在项目中产生
+model ServiceProject {
+  id         String         @id @default(cuid())
+  customerId String         @map("customer_id")
+  name       String
+  note       String         @default("")
+  status     CustomerStatus @default(active)
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+  customer   Customer       @relation(fields: [customerId], references: [id])
+  issues     Issue[]
+  meetings   MeetingBatch[]
+
+  @@unique([customerId, name])
+  @@map("service_projects")
 }
 
 model CustomerPriorityOverride {
@@ -219,6 +237,7 @@ model Contact {
 model MeetingBatch {
   id              String    @id @default(cuid())
   customerId      String    @map("customer_id")
+  serviceProjectId String?  @map("service_project_id")
   meetingOn       DateTime? @db.Date @map("meeting_on")
   title           String
   updatedOn       DateTime? @db.Date @map("updated_on")
@@ -232,6 +251,7 @@ model MeetingBatch {
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
   customer        Customer  @relation(fields: [customerId], references: [id])
+  serviceProject  ServiceProject? @relation(fields: [serviceProjectId], references: [id])
   attendees       MeetingAttendee[]
   issues          Issue[]
 
@@ -256,9 +276,11 @@ model MeetingAttendee {
 model Issue {
   id                         String           @id @default(cuid())
   customerId                 String           @map("customer_id")
+  serviceProjectId           String           @map("service_project_id")
   meetingBatchId             String?          @map("meeting_batch_id")
   sourceId                   String?          @map("source_id")
   issueTypeId                String?          @map("issue_type_id")
+  /// 番号：同一服务项目内唯一（列名沿用 customer_seq）
   customerSeq                Int              @map("customer_seq")
   title                      String           @default("")
   titleIsDraft               Boolean          @default(false) @map("title_is_draft")
@@ -293,6 +315,7 @@ model Issue {
   updatedById                String           @map("updated_by_id")
 
   customer        Customer         @relation(fields: [customerId], references: [id])
+  serviceProject  ServiceProject   @relation(fields: [serviceProjectId], references: [id])
   meetingBatch    MeetingBatch?    @relation(fields: [meetingBatchId], references: [id])
   source          Source?          @relation(fields: [sourceId], references: [id])
   issueType       IssueType?       @relation(fields: [issueTypeId], references: [id])
@@ -307,8 +330,9 @@ model Issue {
   tags            IssueTagOnIssue[]
   notifications   Notification[]
 
-  @@unique([customerId, customerSeq])
+  @@unique([serviceProjectId, customerSeq])
   @@index([customerId, status])
+  @@index([serviceProjectId, status])
   @@index([dueOn])
   @@index([priorityId, status])
   @@index([waitingOn, status])

@@ -5,14 +5,22 @@ interface Props {
   m?: MeetingBatch & { attendees: { kind: string; userId: string | null; contactId: string | null; placeholderLabel: string }[] };
   users: { id: string; displayName: string }[];
   contacts: { id: string; name: string }[];
+  projects: { id: string; name: string }[];
+  defaultProjectId?: string;
 }
 
-export default function MeetingFields({ m, users, contacts }: Props) {
+export default function MeetingFields({ m, users, contacts, projects, defaultProjectId }: Props) {
   const has = (kind: string, id: string) => !!m?.attendees.some((a) => a.kind === kind && (a.userId === id || a.contactId === id));
   const placeholders = m?.attendees.filter((a) => a.kind === "placeholder").map((a) => a.placeholderLabel).join("\n") ?? "";
   return (
     <div className="stack">
       <div className="form-grid">
+        <label className="field span-4"><span>服务项目</span>
+          <select name="serviceProjectId" defaultValue={m ? (m.serviceProjectId ?? "") : (defaultProjectId ?? "")}>
+            <option value="">不归属具体项目</option>
+            {projects.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        </label>
         <label className="field"><span>会谈日</span><input type="date" name="meetingOn" defaultValue={m ? dateToYmd(m.meetingOn) : todayShanghai()} /></label>
         <label className="field span-2" style={{ gridColumn: "span 3" }}><span>标题</span><input type="text" name="title" defaultValue={m?.title} placeholder="留空则为「YYYY-MM-DD 会谈」" maxLength={200} /></label>
         <label className="field"><span>更新日</span><input type="date" name="updatedOn" defaultValue={m ? dateToYmd(m.updatedOn) : ""} /></label>

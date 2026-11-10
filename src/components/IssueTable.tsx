@@ -22,6 +22,8 @@ function cell(k: ColumnKey, r: IssueListRow, today: string, names: Map<string, s
       return <Link href={`/issues/${r.id}`}><TitleText title={r.title} /></Link>;
     case "customer":
       return <Link href={`/customers/${r.customer.id}`} className="nowrap">{r.customer.shortName || r.customer.name}</Link>;
+    case "project":
+      return <Link href={`/projects/${r.serviceProject.id}`} className="clip">{r.serviceProject.name}</Link>;
     case "priority":
       return <PriorityPill p={r.priority} />;
     case "status":
@@ -108,7 +110,7 @@ export default async function IssueTable({ rows, columns, selectable = false, em
         <thead>
           <tr>
             {selectable && <th style={{ width: 32 }}><span className="sr-only">选择</span></th>}
-            {columns.map((k) => <th key={k}>{label(k)}</th>)}
+            {columns.map((k) => <th key={k} className={`col-${k}`}>{label(k)}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -124,7 +126,7 @@ export default async function IssueTable({ rows, columns, selectable = false, em
                     <input type="checkbox" name="ids" value={r.id} form="bulk-form" aria-label={`选择 #${r.customerSeq}`} />
                   </td>
                 )}
-                {columns.map((k) => <td key={k}>{cell(k, r, today, names)}</td>)}
+                {columns.map((k) => <td key={k} className={`col-${k}`}>{cell(k, r, today, names)}</td>)}
               </tr>
             ))
           )}

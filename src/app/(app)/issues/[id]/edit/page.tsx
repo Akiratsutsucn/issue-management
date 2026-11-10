@@ -12,7 +12,7 @@ export default async function EditIssuePage({ params }: { params: Promise<{ id: 
   const user = await requireUser();
   const issue = await prisma.issue.findUnique({ where: { id }, include: { assignees: true, tags: { include: { tag: true } } } });
   if (!issue) notFound();
-  const opts = await issueFormOptions(issue.customerId);
+  const opts = await issueFormOptions(issue.customerId, issue.serviceProjectId);
 
   return (
     <main className="page" style={{ maxWidth: 1080 }}>
@@ -28,6 +28,7 @@ export default async function EditIssuePage({ params }: { params: Promise<{ id: 
         action={updateIssueAction.bind(null, id)}
         values={{
           customerId: issue.customerId,
+          serviceProjectId: issue.serviceProjectId,
           meetingBatchId: issue.meetingBatchId ?? "",
           sourceId: issue.sourceId ?? "",
           issueTypeId: issue.issueTypeId ?? "",

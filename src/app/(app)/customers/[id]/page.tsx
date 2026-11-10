@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ActionForm from "@/components/ActionForm";
-import IssueTable from "@/components/IssueTable";
-import { fmtDate } from "@/lib/dates";
-import { resolveColumns } from "@/lib/labels";
+import { fmtDate, todayShanghai, ymdToDate } from "@/lib/dates";
+import { UNFINISHED } from "@/lib/status";
+import { createProjectAction } from "../../projects/actions";
 import { requireUser } from "@/lib/server/auth";
 import { prisma } from "@/lib/server/db";
-import { issueListInclude } from "@/lib/server/issue-query";
 import { addContactAction, setCustomerStatusAction, updateContactAction, updateCustomerAction } from "../actions";
 
 const contactFields = (c?: { name: string; title: string; department: string; phone: string; email: string; note: string }) => (
@@ -22,16 +21,28 @@ const contactFields = (c?: { name: string; title: string; department: string; ph
 
 export default async function CustomerPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const user = await requireUser();
+  await requireUser();
   const customer = await prisma.customer.findUnique({
     where: { id },
     include: {
       contacts: { orderBy: { createdAt: "asc" } },
-      meetings: { orderBy: [{ meetingOn: "desc" }, { createdAt: "desc" }], include: { _count: { select: { issues: true } } } },
+      meetings: {
+        orderBy: [{ meetingOn: "desc" }, { createdAt: "desc" }],
+        include: { _count: { select: { issues: true } }, serviceProject: { select: { name: true } } },
+      },
+      projects: { orderBy: [{ status: "asc" }, { createdAt: "desc" }] },
     },
   });
   if (!customer) notFound();
-  const issues = await prisma.issue.findMany({ where: { customerId: id }, orderBy: { customerSeq: "asc" }, include: issueListInclude, take: 500 });
+  const today = ymdToDate(todayShanghai())!;
+  const ids = customer.projects.map((p) => p.id);
+  const [all, open, late] = await Promise.all([
+    prisma.issue.groupBy({ by: ["serviceProjectId"], where: { serviceProjectId: { in: ids } }, _count: true }),
+    prisma.issue.groupBy({ by: ["serviceProjectId"], where: { serviceProjectId: { in: ids }, status: { in: UNFINISHED } }, _count: true }),
+    prisma.issue.groupBy({ by: ["serviceProjectId"], where: { serviceProjectId: { in: ids }, status: { in: UNFINISHED }, dueOn: { lt: today } }, _count: true }),
+  ]);
+  const n = (rows: { serviceProjectId: string; _count: number }[], pid: string) => rows.find((r) => r.serviceProjectId === pid)?._count ?? 0;
+  const issueTotal = all.reduce((a, r) => a + r._count, 0);
   const archived = customer.status === "archived";
 
   return (
@@ -40,13 +51,12 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
       <div className="page-head">
         <div>
           <h1>{customer.name}{archived && <span className="tag" style={{ marginLeft: 10, verticalAlign: "middle" }}>已归档</span>}</h1>
-          <div className="sub">{customer.shortName || "—"} · 课题 {issues.length} 条</div>
+          <div className="sub">{customer.shortName || "—"} · 服务项目 {customer.projects.length} 个 · 课题 {issueTotal} 条</div>
         </div>
         <div className="row">
           <a className="btn" href={`/api/export/customer/${id}`}>导出</a>
           <a className="btn" href={`/api/export/customer/${id}?forCustomer=1`}>导出（给客户）</a>
           <a className="btn" href={`/api/export/customer/${id}?zip=1&forCustomer=1`}>导出含证据 zip</a>
-          <Link className="btn btn-text" href={`/import?customer=${id}`}>导入到此客户</Link>
           <Link className="btn" href={`/customers/${id}/meetings/new`}>新建会谈</Link>
           <Link className="btn btn-primary" href={`/issues/new?customer=${id}`}>新建课题</Link>
         </div>
@@ -54,13 +64,39 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
 
       <div className="split">
         <div className="stack">
-          <section>
-            <div className="card-head"><h2>课题</h2><Link href={`/issues?customer=${id}&status=all`} className="btn btn-text btn-sm">在列表中筛选</Link></div>
-            <IssueTable
-              rows={issues}
-              columns={resolveColumns(user.listColumns).filter((c) => c !== "customer")}
-              empty={<span>还没有课题。<Link href={`/issues/new?customer=${id}`} className="btn btn-text">新建课题</Link></span>}
-            />
+          <section className="card stack-sm">
+            <div className="card-head" style={{ marginBottom: 0 }}>
+              <h2>服务项目</h2>
+              <Link href={`/issues?customer=${id}&status=all`} className="btn btn-text btn-sm">该客户全部课题</Link>
+            </div>
+            {customer.projects.length === 0 ? (
+              <span className="muted">还没有服务项目。新建后，在项目中记录课题。</span>
+            ) : (
+              <div className="project-list">
+                {customer.projects.map((p) => (
+                  <Link key={p.id} href={`/projects/${p.id}`} className="project-row">
+                    <span className="stack-sm" style={{ gap: 2 }}>
+                      <span className="name">{p.name}{p.status === "archived" && <span className="tag" style={{ marginLeft: 8 }}>已归档</span>}</span>
+                      {p.note && <span className="small muted clip-1">{p.note}</span>}
+                    </span>
+                    <span className="row small muted">
+                      <span>课题 <b className="num" style={{ color: "var(--text)" }}>{n(all, p.id)}</b></span>
+                      <span>未完结 <b className="num" style={{ color: "var(--text)" }}>{n(open, p.id)}</b></span>
+                      {n(late, p.id) > 0 && <span className="danger-text">逾期 <b className="num">{n(late, p.id)}</b></span>}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+            <details>
+              <summary className="small" style={{ cursor: "pointer", color: "var(--primary)" }}>新建服务项目</summary>
+              <div style={{ marginTop: 10 }}>
+                <ActionForm action={createProjectAction.bind(null, id)} submitLabel="新建" submitClass="btn btn-primary btn-sm">
+                  <label className="field"><span className="req">名称</span><input type="text" name="name" required maxLength={160} placeholder="例如：2026年企业微信咨询服务项目" /></label>
+                  <label className="field"><span>备注</span><input type="text" name="note" maxLength={2000} /></label>
+                </ActionForm>
+              </div>
+            </details>
           </section>
 
           <section className="card">
@@ -70,7 +106,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
                 {customer.meetings.map((m) => (
                   <li key={m.id}>
                     <span className="num small muted">{fmtDate(m.meetingOn)}</span>
-                    <span><Link href={`/meetings/${m.id}`}>{m.title}</Link> <span className="small muted">· 课题 {m._count.issues}</span></span>
+                    <span><Link href={`/meetings/${m.id}`}>{m.title}</Link> <span className="small muted">· {m.serviceProject?.name ?? "未归属项目"} · 课题 {m._count.issues}</span></span>
                   </li>
                 ))}
               </ul>

@@ -126,8 +126,13 @@ export async function saveMeetingAction(customerId: string, meetingId: string | 
     if (n !== contactIds.length) return { error: "出席联系人不属于该客户" };
   }
   const title = d.title || `${d.meetingOn || "未定日期"} 会谈`;
+  const serviceProjectId = s(fd, "serviceProjectId") || null;
+  if (serviceProjectId) {
+    const proj = await prisma.serviceProject.findUnique({ where: { id: serviceProjectId } });
+    if (!proj || proj.customerId !== customerId) return { error: "服务项目不属于该客户" };
+  }
   const data = {
-    meetingOn: ymdToDate(d.meetingOn), title, updatedOn: ymdToDate(d.updatedOn), updaterText: d.updaterText,
+    serviceProjectId, meetingOn: ymdToDate(d.meetingOn), title, updatedOn: ymdToDate(d.updatedOn), updaterText: d.updaterText,
     informationText: d.informationText, fillingNote: d.fillingNote, sourceDocument: d.sourceDocument, divisionNote: d.divisionNote,
   };
   const id = await prisma.$transaction(async (tx) => {

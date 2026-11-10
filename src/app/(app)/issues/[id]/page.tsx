@@ -28,6 +28,7 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
     where: { id },
     include: {
       customer: true,
+      serviceProject: true,
       meetingBatch: true,
       priority: true,
       issueType: true,
@@ -37,16 +38,16 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
       tags: { include: { tag: true } },
       entries: true,
       evidences: { orderBy: { createdAt: "desc" } },
-      linksFrom: { include: { toIssue: { include: { customer: true } } } },
-      linksTo: { include: { fromIssue: { include: { customer: true } } } },
+      linksFrom: { include: { toIssue: { include: { customer: true, serviceProject: true } } } },
+      linksTo: { include: { fromIssue: { include: { customer: true, serviceProject: true } } } },
     },
   });
   if (!issue) notFound();
 
-  const [activities, contacts, customers, users] = await Promise.all([
+  const [activities, contacts, projects, users] = await Promise.all([
     prisma.activity.findMany({ where: { issueId: id }, orderBy: { at: "desc" }, take: 200 }),
     prisma.contact.findMany({ where: { customerId: issue.customerId }, orderBy: { name: "asc" } }),
-    prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.serviceProject.findMany({ orderBy: [{ customer: { name: "asc" } }, { createdAt: "desc" }], select: { id: true, name: true, customer: { select: { name: true } } } }),
     prisma.user.findMany({ select: { id: true, displayName: true } }),
   ]);
   const uname = (uid: string | null) => users.find((u) => u.id === uid)?.displayName ?? "系统";
@@ -63,7 +64,7 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
   return (
     <main className="page">
       <div className="crumbs">
-        <Link href="/issues">课题</Link> / <Link href={`/customers/${issue.customerId}`}>{issue.customer.name}</Link>
+        <Link href="/issues">课题</Link> / <Link href={`/customers/${issue.customerId}`}>{issue.customer.name}</Link> / <Link href={`/projects/${issue.serviceProjectId}`}>{issue.serviceProject.name}</Link>
         {issue.meetingBatch && <> / <Link href={`/meetings/${issue.meetingBatch.id}`}>{issue.meetingBatch.title}</Link></>}
       </div>
       <div className="page-head" style={{ alignItems: "flex-start" }}>
@@ -139,7 +140,7 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
                 {links.map((l) => (
                   <li key={l.id} className="row">
                     <Link href={`/issues/${l.other.id}`}>
-                      <span className="muted">{l.other.customer.name}</span> <span className="num">#{l.other.customerSeq}</span> <TitleText title={l.other.title} />
+                      <span className="muted">{l.other.serviceProject.name}</span> <span className="num">#{l.other.customerSeq}</span> <TitleText title={l.other.title} />
                     </Link>
                     <StatusPill status={l.other.status} />
                     {l.note && <span className="small muted">{l.note}</span>}
@@ -149,8 +150,8 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
               </ul>
             )}
             <ActionForm action={linkAction.bind(null, id)} submitLabel="关联" submitClass="btn btn-sm" resetOnOk className="row">
-              <select name="customerId" defaultValue={issue.customerId} style={{ width: "auto" }}>
-                {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              <select name="serviceProjectId" defaultValue={issue.serviceProjectId} style={{ width: "auto", maxWidth: 320 }} aria-label="服务项目">
+                {projects.map((x) => <option key={x.id} value={x.id}>{x.customer.name} · {x.name}</option>)}
               </select>
               <input type="text" name="seq" placeholder="番号" style={{ width: 90 }} required />
               <input type="text" name="note" placeholder="备注（可选）" style={{ width: 200 }} maxLength={300} />
@@ -201,6 +202,7 @@ export default async function IssueDetailPage({ params }: { params: Promise<{ id
               <dt>期限</dt><dd className={`num${overdue ? " danger-text" : ""}`}>{due || "—"}{overdue && " · 逾期"}</dd>
               <dt>类型</dt><dd>{issue.issueType?.label ?? "—"}</dd>
               <dt>来源</dt><dd>{issue.source?.label ?? "—"}</dd>
+              <dt>服务项目</dt><dd><Link href={`/projects/${issue.serviceProjectId}`}>{issue.serviceProject.name}</Link></dd>
               <dt>会谈</dt><dd>{issue.meetingBatch ? <Link href={`/meetings/${issue.meetingBatch.id}`}>{issue.meetingBatch.title}</Link> : "—"}</dd>
               <dt>首次回答日</dt><dd className="num">{fmtDate(issue.firstAnsweredAt)}</dd>
               <dt>完成日</dt><dd className="num">{fmtDate(issue.completedAt)}</dd>

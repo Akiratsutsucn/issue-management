@@ -165,10 +165,10 @@ export async function withdrawEntry(entryId: string, user: SessionUser): Promise
   });
 }
 
-export async function linkIssues(fromId: string, toCustomerId: string, toSeq: number, note: string, user: SessionUser): Promise<void> {
+export async function linkIssues(fromId: string, toProjectId: string, toSeq: number, note: string, user: SessionUser): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const from = await tx.issue.findUnique({ where: { id: fromId } });
-    const to = await tx.issue.findUnique({ where: { customerId_customerSeq: { customerId: toCustomerId, customerSeq: toSeq } } });
+    const to = await tx.issue.findUnique({ where: { serviceProjectId_customerSeq: { serviceProjectId: toProjectId, customerSeq: toSeq } } });
     if (!from || !to) throw new UserError("目标课题不存在");
     if (from.id === to.id) throw new UserError("不能关联自身");
     const dup = await tx.issueLink.findFirst({

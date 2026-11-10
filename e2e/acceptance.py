@@ -73,6 +73,9 @@ def make_import_xlsx() -> str:
 def new_issue(page, customer: str, title: str, *, high=False, no_assignee=False, image: str | None = None, note=""):
     page.goto(f"{BASE}/issues/new")
     page.select_option("select[name=customerId]", label=customer)
+    new_proj = page.locator("input[name=newProjectName]")
+    if new_proj.count() and new_proj.is_visible():
+        new_proj.fill(f"{customer}服务项目")
     page.fill("input[name=title]", title)
     if high:
         page.select_option("select[name=priorityId]", label="高")
@@ -150,7 +153,7 @@ def main() -> int:
 
         # 6 关联并双向跳转
         link_form = page.locator("section", has=page.get_by_role("heading", name="关联课题"))
-        link_form.locator("select[name=customerId]").select_option(label="测试客户乙")
+        link_form.locator("select[name=serviceProjectId]").select_option(label="测试客户乙 · 测试客户乙服务项目")
         link_form.locator("input[name=seq]").fill("1")
         link_form.get_by_role("button", name="关联").click()
         expect(link_form.get_by_text("取消关联")).to_be_visible(timeout=10000)
@@ -227,6 +230,7 @@ def main() -> int:
         prev = page.content()
         serial_ok = "2026-10-29" in prev and "标题待补" in prev
         page.screenshot(path=os.path.join(OUT, "08-import-preview.png"), full_page=True)
+        page.fill("input[name=newProjectName]", "导入测试服务项目")
         page.once("dialog", lambda d: d.accept())
         page.get_by_role("button", name="确认导入").click()
         expect(page.get_by_text("导入结果")).to_be_visible(timeout=20000)
@@ -241,6 +245,14 @@ def main() -> int:
         page.goto(f"{BASE}/audit")
         log = page.content()
         check("13 操作日志有创建、状态变更", "创建课题" in log and "已回答" in log)
+
+        # 服务项目层级：客户页列出项目，项目页列出课题且番号按项目编号
+        page.goto(f"{BASE}/customers/{cust_id}")
+        has_proj = page.locator(".project-row", has_text="测试客户甲服务项目").count() == 1
+        page.locator(".project-row", has_text="测试客户甲服务项目").click()
+        page.wait_for_url(re.compile(r"/projects/c[a-z0-9]+$"))
+        page.screenshot(path=os.path.join(OUT, "09-project.png"), full_page=True)
+        check("服务项目：客户页列出项目，项目页列出其课题", has_proj and page.get_by_text("账号整合").is_visible())
 
         # 14 页面无明文密码
         check("14 页面源码不含密码", PASSWORD not in log and PASSWORD not in prev)

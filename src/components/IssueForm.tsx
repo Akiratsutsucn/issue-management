@@ -10,7 +10,8 @@ export interface CustomerOpt {
   id: string;
   name: string;
   contacts: { id: string; name: string }[];
-  batches: { id: string; title: string }[];
+  batches: { id: string; title: string; serviceProjectId: string | null }[];
+  projects: { id: string; name: string }[];
 }
 export interface Opt {
   id: string;
@@ -19,6 +20,7 @@ export interface Opt {
 
 export interface IssueFormValues {
   customerId: string;
+  serviceProjectId: string;
   meetingBatchId: string;
   sourceId: string;
   issueTypeId: string;
@@ -50,6 +52,7 @@ interface Props {
   users: Opt[];
   canCreateCustomer: boolean;
   seqHint?: string;
+  seqByProject?: Record<string, number>;
   notice?: string;
 }
 
@@ -59,6 +62,12 @@ export default function IssueForm(p: Props) {
   const [customerId, setCustomerId] = useState(v.customerId);
   const [newCustomer, setNewCustomer] = useState(!v.customerId && p.customers.length === 0 && p.canCreateCustomer);
   const cust = p.customers.find((c) => c.id === customerId);
+  const [projectId, setProjectId] = useState(v.serviceProjectId);
+  const [newProject, setNewProject] = useState(false);
+  const project = cust?.projects.find((x) => x.id === projectId);
+  const editProject = p.mode === "edit" ? p.customers.flatMap((c) => c.projects).find((x) => x.id === v.serviceProjectId) : undefined;
+  // 会谈只列出属于当前项目或未归属项目的
+  const batches = cust?.batches.filter((b) => !b.serviceProjectId || b.serviceProjectId === (p.mode === "edit" ? v.serviceProjectId : projectId)) ?? [];
 
   return (
     <form action={action} className="card" style={{ padding: "8px 28px 24px" }}>
@@ -73,13 +82,23 @@ export default function IssueForm(p: Props) {
               {newCustomer ? (
                 <input type="text" name="newCustomerName" placeholder="新客户名称" required maxLength={120} />
               ) : (
-                <select name="customerId" value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
+                <select
+                  name="customerId"
+                  value={customerId}
+                  onChange={(e) => {
+                    const next = p.customers.find((c) => c.id === e.target.value);
+                    setCustomerId(e.target.value);
+                    setNewProject(false);
+                    setProjectId(next?.projects.length === 1 ? next.projects[0].id : "");
+                  }}
+                  required
+                >
                   <option value="">选择客户</option>
                   {p.customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               )}
               {p.canCreateCustomer && (
-                <button type="button" className="btn btn-text btn-sm" style={{ justifySelf: "start" }} onClick={() => setNewCustomer(!newCustomer)}>
+                <button type="button" className="btn btn-text btn-sm" style={{ justifySelf: "start" }} onClick={() => { setNewCustomer(!newCustomer); setNewProject(!newCustomer); setProjectId(""); }}>
                   {newCustomer ? "选择已有客户" : "同时新建客户"}
                 </button>
               )}
@@ -87,14 +106,37 @@ export default function IssueForm(p: Props) {
           ) : (
             <div className="field span-2">
               <span>客户</span>
-              <span style={{ color: "var(--text)", paddingTop: 6 }}>{cust?.name}{p.seqHint ? ` · ${p.seqHint}` : ""}</span>
+              <span style={{ color: "var(--text)", paddingTop: 6 }}>{cust?.name}</span>
+            </div>
+          )}
+          {p.mode === "create" ? (
+            <label className="field span-2">
+              <span className="req">服务项目</span>
+              {newProject || newCustomer || (cust && cust.projects.length === 0) ? (
+                <input type="text" name="newProjectName" placeholder="例如：2026年企业微信咨询服务项目" required maxLength={160} key={`np-${customerId}`} />
+              ) : (
+                <select name="serviceProjectId" value={projectId} onChange={(e) => setProjectId(e.target.value)} required disabled={!cust}>
+                  <option value="">{cust ? "选择服务项目" : "先选择客户"}</option>
+                  {cust?.projects.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </select>
+              )}
+              {cust && cust.projects.length > 0 && !newCustomer && (
+                <button type="button" className="btn btn-text btn-sm" style={{ justifySelf: "start" }} onClick={() => { setNewProject(!newProject); setProjectId(""); }}>
+                  {newProject ? "选择已有项目" : "新建服务项目"}
+                </button>
+              )}
+            </label>
+          ) : (
+            <div className="field span-2">
+              <span>服务项目</span>
+              <span style={{ color: "var(--text)", paddingTop: 6 }}>{editProject?.name}{p.seqHint ? ` · ${p.seqHint}` : ""}</span>
             </div>
           )}
           <label className="field span-2">
             <span>会谈 / 跟进批次</span>
-            <select name="meetingBatchId" defaultValue={v.meetingBatchId} key={`b-${customerId}`} disabled={!cust}>
+            <select name="meetingBatchId" defaultValue={v.meetingBatchId} key={`b-${customerId}-${projectId}`} disabled={!cust}>
               <option value="">不绑定</option>
-              {cust?.batches.map((b) => <option key={b.id} value={b.id}>{b.title}</option>)}
+              {batches.map((b) => <option key={b.id} value={b.id}>{b.title}</option>)}
             </select>
           </label>
           <label className="field">
@@ -111,7 +153,14 @@ export default function IssueForm(p: Props) {
               {p.types.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
             </select>
           </label>
-          {p.mode === "create" && p.seqHint && <div className="field span-2"><span>番号</span><span className="num" style={{ color: "var(--text)", paddingTop: 6 }}>{p.seqHint}</span></div>}
+          {p.mode === "create" && (
+            <div className="field span-2">
+              <span>番号</span>
+              <span className="num" style={{ color: "var(--text)", paddingTop: 6 }}>
+                {project && p.seqByProject?.[project.id] ? `#${p.seqByProject[project.id]}（自动）` : "保存时按服务项目自动编号"}
+              </span>
+            </div>
+          )}
         </div>
       </section>
 

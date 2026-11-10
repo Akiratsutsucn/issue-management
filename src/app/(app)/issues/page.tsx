@@ -11,9 +11,14 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   const user = await requireUser();
   const customerId = param(sp, "customer");
-  const [{ rows, total, page }, customers, priorities, types, sources, users, batches, contacts, anyIssue] = await Promise.all([
+  const [{ rows, total, page }, customers, projects, priorities, types, sources, users, batches, contacts, anyIssue] = await Promise.all([
     findIssues(sp),
     prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, status: true } }),
+    prisma.serviceProject.findMany({
+      where: customerId ? { customerId } : {},
+      orderBy: [{ customer: { name: "asc" } }, { createdAt: "desc" }],
+      select: { id: true, name: true, status: true, customer: { select: { name: true } } },
+    }),
     prisma.priority.findMany({ orderBy: { sortOrder: "asc" } }),
     prisma.issueType.findMany({ orderBy: { sortOrder: "asc" } }),
     prisma.source.findMany({ orderBy: { sortOrder: "asc" } }),
@@ -67,6 +72,7 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
         {["dueSoon", "pendingLong", "createdTo"].map((k) => param(sp, k) && <input key={k} type="hidden" name={k} value={param(sp, k)} />)}
         <input type="search" name="q" defaultValue={param(sp, "q")} placeholder="关键词（标题、问题点、解决案、备注）" style={{ minWidth: 260 }} />
         {sel("customer", customers.map((c) => ({ v: c.id, l: c.status === "archived" ? `${c.name}（归档）` : c.name })), "全部客户")}
+        {sel("project", projects.map((x) => ({ v: x.id, l: `${customerId ? "" : `${x.customer.name} · `}${x.name}${x.status === "archived" ? "（归档）" : ""}` })), "全部服务项目")}
         {sel("priority", priorities.map((p) => ({ v: p.id, l: p.label })), "优先级")}
         {sel("assignee", [...users.map((u) => ({ v: u.id, l: u.displayName })), { v: "none", l: "未指定担当" }], "担当")}
         {sel("waiting", Object.entries(WAITING_LABEL).map(([v, l]) => ({ v, l })), "待谁处理")}

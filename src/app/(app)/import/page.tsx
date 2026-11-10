@@ -27,7 +27,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
         <div className="page-head"><div><h1>导入 Excel（可选）</h1><div className="sub">不是必经步骤。系统不会自动导入任何文件。</div></div></div>
         <Steps on={0} />
         <section className="card stack-sm">
-          <ImportUpload customerId={param(sp, "customer")} />
+          <ImportUpload customerId={param(sp, "customer")} projectId={param(sp, "project")} />
           <p className="hint">支持表头区（客先、会谈、更新日、更新者、会谈信息、填写口径）、「詳細」拆分为問題点/解決案、Excel 序列日期与缺字段行。上传后先预览，确认后才写入。</p>
         </section>
         {recent.length > 0 && (
@@ -47,7 +47,7 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
     const r = job.report as unknown as ImportReport;
     return (
       <main className="page stack" style={{ maxWidth: 1000 }}>
-        <div className="page-head"><div><h1>导入结果</h1><div className="sub">{job.fileName}</div></div><Link className="btn btn-primary" href={`/issues?customer=${r.customerId}&status=all`}>查看课题</Link></div>
+        <div className="page-head"><div><h1>导入结果</h1><div className="sub">{job.fileName}</div></div><Link className="btn btn-primary" href={r.serviceProjectId ? `/projects/${r.serviceProjectId}` : `/issues?customer=${r.customerId}&status=all`}>查看课题</Link></div>
         <Steps on={3} />
         <section className="card">
           <p>创建 <b className="num">{r.created}</b> · 更新 <b className="num">{r.updated}</b> · 跳过 <b className="num">{r.skipped}</b> · 失败 <b className="num">{r.failed.length}</b> · 建立关联 <b className="num">{r.linked}</b></p>
@@ -65,8 +65,16 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
     );
   }
 
-  const customers = await prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
-  const target = param(sp, "customer") || pv.matchedCustomerId || "";
+  const [customers, projects] = await Promise.all([
+    prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.serviceProject.findMany({
+      where: { status: "active" },
+      orderBy: [{ customer: { name: "asc" } }, { createdAt: "desc" }],
+      select: { id: true, name: true, customerId: true, customer: { select: { name: true } } },
+    }),
+  ]);
+  const targetProject = projects.find((x) => x.id === param(sp, "project"));
+  const target = targetProject?.customerId || param(sp, "customer") || pv.matchedCustomerId || "";
   const unmatchedUsers = Object.entries(pv.userMatch).filter(([, v]) => !v).map(([k]) => k);
   const unmatchedPriorities = Object.entries(pv.priorityMatch).filter(([k, v]) => k && !v).map(([k]) => k);
   const multiDay = pv.dates.length > 1;
@@ -90,6 +98,14 @@ export default async function ImportPage({ searchParams }: { searchParams: Promi
               </select>
             </label>
             <label className="field span-2"><span>新客户名称</span><input type="text" name="newCustomerName" defaultValue={pv.matchedCustomerId ? "" : pv.header.customer} maxLength={120} /></label>
+            <label className="field span-2"><span className="req">服务项目</span>
+              <select name="serviceProjectId" defaultValue={targetProject?.id ?? ""}>
+                <option value="">新建项目（填右侧名称，归入上面的客户）</option>
+                {projects.map((x) => <option key={x.id} value={x.id}>{x.customer.name} · {x.name}</option>)}
+              </select>
+            </label>
+            <label className="field span-2"><span>新服务项目名称</span><input type="text" name="newProjectName" placeholder="例如：2026年企业微信咨询服务项目" maxLength={160} /></label>
+            <p className="hint span-4">选了已有服务项目时，课题归入该项目所属客户，上面的客户选择不生效。番号在服务项目内唯一。</p>
             <label className="field span-2"><span>批次归属</span>
               <select name="batchMode" defaultValue={multiDay ? "byDate" : "header"}>
                 <option value="byDate">按记载日：与会谈日不同的日期各建「跟进」批次</option>

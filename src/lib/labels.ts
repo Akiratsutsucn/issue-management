@@ -15,6 +15,7 @@ export const LIST_COLUMNS = [
   { key: "seq", label: "番号", required: true },
   { key: "title", label: "标题", required: true },
   { key: "customer", label: "客户", required: true },
+  { key: "project", label: "服务项目", required: true },
   { key: "priority", label: "优先级", required: true },
   { key: "status", label: "状态", required: true },
   { key: "waitingOn", label: "待谁处理", required: false },
@@ -46,7 +47,7 @@ export type ColumnKey = (typeof LIST_COLUMNS)[number]["key"];
 
 /** 默认：必要 11 列 + 客户 + 待谁处理/下一步/更新（02 与 05 的并集） */
 export const DEFAULT_COLUMNS: ColumnKey[] = [
-  "seq", "title", "customer", "priority", "status", "waitingOn", "assignees", "dueOn", "nextAction",
+  "seq", "title", "customer", "project", "priority", "status", "waitingOn", "assignees", "dueOn", "nextAction",
   "recordedOn", "reporter", "completion", "problem", "solution", "updatedAt",
 ];
 

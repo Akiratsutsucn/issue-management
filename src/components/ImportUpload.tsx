@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-export default function ImportUpload({ customerId }: { customerId: string }) {
+export default function ImportUpload({ customerId, projectId }: { customerId: string; projectId: string }) {
   const router = useRouter();
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -18,7 +18,10 @@ export default function ImportUpload({ customerId }: { customerId: string }) {
         const json = (await res.json().catch(() => ({}))) as { ok?: boolean; id?: string; error?: string };
         setBusy(false);
         if (!res.ok || !json.ok) return setErr(json.error ?? "解析失败");
-        router.push(`/import?job=${json.id}${customerId ? `&customer=${customerId}` : ""}`);
+        const q = new URLSearchParams({ job: json.id ?? "" });
+        if (customerId) q.set("customer", customerId);
+        if (projectId) q.set("project", projectId);
+        router.push(`/import?${q}`);
       }}
     >
       <input type="file" name="file" accept=".xlsx" required />

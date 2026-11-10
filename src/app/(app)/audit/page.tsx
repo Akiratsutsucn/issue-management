@@ -5,7 +5,7 @@ import { prisma } from "@/lib/server/db";
 import { param, type SearchParams } from "@/lib/server/issue-query";
 
 const ENTITY: Record<string, string> = {
-  issue: "课题", customer: "客户", contact: "联系人", meeting: "会谈", user: "用户", settings: "设置",
+  issue: "课题", project: "服务项目", customer: "客户", contact: "联系人", meeting: "会谈", user: "用户", settings: "设置",
   priority: "优先级", issueType: "类型", source: "来源", import: "导入",
 };
 

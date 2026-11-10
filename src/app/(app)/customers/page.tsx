@@ -11,7 +11,7 @@ async function loadRows(status: "active" | "archived") {
   const customers = await prisma.customer.findMany({
     where: { status },
     orderBy: { updatedAt: "desc" },
-    include: { contacts: { orderBy: { createdAt: "asc" }, take: 1 } },
+    include: { contacts: { orderBy: { createdAt: "asc" }, take: 1 }, _count: { select: { projects: true } } },
   });
   const ids = customers.map((c) => c.id);
   const [open, overdue, last] = await Promise.all([
@@ -32,13 +32,14 @@ function Table({ rows }: { rows: Awaited<ReturnType<typeof loadRows>> }) {
     <div className="table-wrap">
       <table className="table">
         <thead>
-          <tr><th>名称</th><th>主联系人</th><th>进行中课题</th><th>逾期</th><th>最近更新</th></tr>
+          <tr><th>名称</th><th>主联系人</th><th>服务项目</th><th>进行中课题</th><th>逾期</th><th>最近更新</th></tr>
         </thead>
         <tbody>
           {rows.map((c) => (
             <tr key={c.id}>
               <td><Link href={`/customers/${c.id}`}>{c.name}</Link>{c.shortName && <span className="muted small"> · {c.shortName}</span>}</td>
               <td>{c.contacts[0]?.name ?? "—"}</td>
+              <td className="num">{c._count.projects}</td>
               <td className="num"><Link href={`/issues?customer=${c.id}`}>{c.open}</Link></td>
               <td className={`num${c.overdue ? " danger-text" : ""}`}>{c.overdue ? <Link href={`/issues?customer=${c.id}&overdue=1`}>{c.overdue}</Link> : 0}</td>
               <td className="num small muted">{fmtDateTime(c.last)}</td>

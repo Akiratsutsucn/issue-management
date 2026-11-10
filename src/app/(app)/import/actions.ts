@@ -22,6 +22,8 @@ export async function executeImportAction(jobId: string, _p: FormState, fd: Form
       {
         customerId: s("customerId") || null,
         newCustomerName: s("newCustomerName").slice(0, 120),
+        serviceProjectId: s("serviceProjectId") || null,
+        newProjectName: s("newProjectName").slice(0, 160),
         batchMode: batchMode === "header" || batchMode === "none" ? batchMode : "byDate",
         strategy: strategy === "skip_existing" || strategy === "overwrite_scalars" ? strategy : "fill_blanks",
         fillRecordedFromMeeting: fd.get("fillRecorded") === "on",

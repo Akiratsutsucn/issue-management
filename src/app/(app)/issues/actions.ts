@@ -58,11 +58,13 @@ export async function createIssueAction(_p: FormState, fd: FormData): Promise<Fo
     ...issueFields(fd),
     customerId: s(fd, "customerId"),
     newCustomerName: s(fd, "newCustomerName"),
+    serviceProjectId: s(fd, "serviceProjectId"),
+    newProjectName: s(fd, "newProjectName"),
     problem: s(fd, "problem"),
     solution: s(fd, "solution"),
   });
   if (!parsed.success) return { error: firstError(parsed.error) };
-  let res: { id: string; customerId: string };
+  let res: { id: string; customerId: string; serviceProjectId: string };
   try {
     res = await createIssue(parsed.data, user);
   } catch (e) {
@@ -70,7 +72,7 @@ export async function createIssueAction(_p: FormState, fd: FormData): Promise<Fo
   }
   revalidatePath("/", "layout");
   if (fd.get("next") === "another") {
-    const q = new URLSearchParams({ customer: res.customerId, created: "1" });
+    const q = new URLSearchParams({ customer: res.customerId, project: res.serviceProjectId, created: "1" });
     if (parsed.data.meetingBatchId) q.set("batch", parsed.data.meetingBatchId);
     redirect(`/issues/new?${q}`);
   }
@@ -168,7 +170,7 @@ export async function linkAction(issueId: string, _p: FormState, fd: FormData): 
   const seq = Number(s(fd, "seq").replace(/^#/, ""));
   if (!Number.isInteger(seq) || seq < 1) return { error: "请填写番号" };
   try {
-    await linkIssues(issueId, s(fd, "customerId"), seq, s(fd, "note").slice(0, 300), user);
+    await linkIssues(issueId, s(fd, "serviceProjectId"), seq, s(fd, "note").slice(0, 300), user);
   } catch (e) {
     return errorOf(e);
   }

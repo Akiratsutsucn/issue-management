@@ -41,6 +41,8 @@ export const issueFieldsSchema = z.object({
 export const issueCreateSchema = issueFieldsSchema.extend({
   customerId: optId,
   newCustomerName: str(120),
+  serviceProjectId: optId,
+  newProjectName: str(160),
   problem: rich,
   solution: rich,
 });
@@ -51,6 +53,11 @@ export type IssueCreateInput = z.infer<typeof issueCreateSchema>;
 export const customerSchema = z.object({
   name: str(120).min(1, "请填写客户名称"),
   shortName: str(60),
+  note: str(2000),
+});
+
+export const projectSchema = z.object({
+  name: str(160).min(1, "请填写服务项目名称"),
   note: str(2000),
 });
 

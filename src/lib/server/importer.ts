@@ -7,6 +7,7 @@ import { richToText, textToRich } from "../sanitize";
 import { recordIssueEvent, writeAudit } from "./audit";
 import type { SessionUser } from "./auth";
 import { prisma, type Tx } from "./db";
+import { nextSeq, resolveProject } from "./issues";
 
 function cellValue(v: ExcelJS.CellValue): Cell {
   if (v === null || v === undefined) return null;
@@ -77,6 +78,8 @@ export async function buildPreview(buf: Buffer, sheetName?: string): Promise<Pre
 export interface ExecuteInput {
   customerId: string | null;
   newCustomerName: string;
+  serviceProjectId: string | null;
+  newProjectName: string;
   batchMode: "header" | "byDate" | "none";
   strategy: ImportStrategy;
   fillRecordedFromMeeting: boolean;
@@ -91,6 +94,7 @@ export interface ImportReport {
   failed: { rowNo: number; reason: string }[];
   linked: number;
   customerId: string;
+  serviceProjectId?: string;
   rows: { rowNo: number; result: string; issueId?: string; seq?: number }[];
 }
 
@@ -119,6 +123,11 @@ export async function executeImport(jobId: string, input: ExecuteInput, user: Se
   report = await prisma.$transaction(
     async (tx) => {
       let customerId = input.customerId;
+      if (input.serviceProjectId) {
+        const proj = await tx.serviceProject.findUnique({ where: { id: input.serviceProjectId } });
+        if (!proj) throw new Error("请选择或新建服务项目：所选项目不存在");
+        customerId = proj.customerId;
+      }
       if (!customerId) {
         const name = input.newCustomerName.trim();
         if (!name) throw new Error("请选择或新建目标客户");
@@ -130,16 +139,22 @@ export async function executeImport(jobId: string, input: ExecuteInput, user: Se
         }
         customerId = c.id;
       }
+      let serviceProjectId: string;
+      try {
+        serviceProjectId = await resolveProject(tx, input, customerId, user);
+      } catch (e) {
+        throw new Error(e instanceof Error ? `请选择或新建服务项目：${e.message}` : "请选择或新建服务项目");
+      }
       const h = pv.header;
       const batches = new Map<string, string>();
       const headerBatch = () =>
         ensureBatch(tx, batches, customerId!, "header", {
-          customerId: customerId!, title: h.meeting || `${h.meetingOn ?? today} 会谈`, meetingOn: ymdToDate(h.meetingOn),
+          customerId: customerId!, serviceProjectId, title: h.meeting || `${h.meetingOn ?? today} 会谈`, meetingOn: ymdToDate(h.meetingOn),
           updatedOn: ymdToDate(h.updatedOn), updaterText: h.updater, informationText: h.info, fillingNote: h.filling, importFileName: job.fileName,
         });
-      const r: ImportReport = { created: 0, updated: 0, skipped: 0, failed: [], linked: 0, customerId, rows: [] };
+      const r: ImportReport = { created: 0, updated: 0, skipped: 0, failed: [], linked: 0, customerId, serviceProjectId, rows: [] };
       const seqToId = new Map<number, string>();
-      let nextSeq = ((await tx.issue.aggregate({ where: { customerId }, _max: { customerSeq: true } }))._max.customerSeq ?? 0) + 1;
+      let seqCursor = await nextSeq(tx, serviceProjectId);
 
       for (const row of pv.rows) {
         if (input.skipRows.includes(row.rowNo)) {
@@ -153,7 +168,7 @@ export async function executeImport(jobId: string, input: ExecuteInput, user: Se
         else if (input.batchMode === "byDate") {
           const d = row.recordedOn;
           meetingBatchId = !d || d === h.meetingOn ? await headerBatch()
-            : await ensureBatch(tx, batches, customerId, d, { customerId, title: `${d} 跟进`, meetingOn: ymdToDate(d), importFileName: job.fileName });
+            : await ensureBatch(tx, batches, customerId, d, { customerId, serviceProjectId, title: `${d} 跟进`, meetingOn: ymdToDate(d), importFileName: job.fileName });
         }
         const assigneeIds = [...new Set(row.assigneeNames.map((n) => pv.userMatch[n]).filter((x): x is string => !!x))];
         const scalars = {
@@ -161,7 +176,7 @@ export async function executeImport(jobId: string, input: ExecuteInput, user: Se
           completionCondition: textToRich(row.completion), recordedOn: ymdToDate(recordedOn), dueOn: ymdToDate(row.dueOn),
           reporterText: row.reporterText, assigneeText: row.assigneeText, confirmationKind: input.kinds[row.rowNo] ?? row.confirmationKind,
         };
-        const existing = row.seq ? await tx.issue.findUnique({ where: { customerId_customerSeq: { customerId, customerSeq: row.seq } }, include: { entries: true, assignees: true } }) : null;
+        const existing = row.seq ? await tx.issue.findUnique({ where: { serviceProjectId_customerSeq: { serviceProjectId, customerSeq: row.seq } }, include: { entries: true, assignees: true } }) : null;
 
         if (existing) {
           if (input.strategy === "skip_existing") {
@@ -203,15 +218,15 @@ export async function executeImport(jobId: string, input: ExecuteInput, user: Se
           continue;
         }
 
-        const seq = row.seq ?? nextSeq;
-        if (row.seq && (await tx.issue.findUnique({ where: { customerId_customerSeq: { customerId, customerSeq: seq } } }))) {
+        const seq = row.seq ?? seqCursor;
+        if (row.seq && (await tx.issue.findUnique({ where: { serviceProjectId_customerSeq: { serviceProjectId, customerSeq: seq } } }))) {
           r.failed.push({ rowNo: row.rowNo, reason: `番号 ${seq} 冲突` });
           continue;
         }
-        nextSeq = Math.max(nextSeq, seq + 1);
+        seqCursor = Math.max(seqCursor, seq + 1);
         const issue = await tx.issue.create({
           data: {
-            ...scalars, customerId, customerSeq: seq, meetingBatchId, status: row.status,
+            ...scalars, customerId, serviceProjectId, customerSeq: seq, meetingBatchId, status: row.status,
             // 首次回答日源表没有，留空，用户可在详情补录（避免把记载日当回答日扭曲响应统计）
             sourceImportId: jobId, createdById: user.id, updatedById: user.id,
             assignees: { create: assigneeIds.map((userId) => ({ userId })) },

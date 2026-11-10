@@ -37,6 +37,7 @@ export function buildIssueWhere(sp: SearchParams): Prisma.IssueWhereInput {
     if (vs.length) and.push({ [field]: { in: vs } } as Prisma.IssueWhereInput);
   };
   eq("customer", "customerId");
+  eq("project", "serviceProjectId");
   eq("batch", "meetingBatchId");
   eq("priority", "priorityId");
   eq("type", "issueTypeId");
@@ -80,6 +81,7 @@ export function buildIssueWhere(sp: SearchParams): Prisma.IssueWhereInput {
       { nextAction: contains },
       { entries: { some: { body: contains, withdrawnAt: null } } },
       { customer: { name: contains } },
+      { serviceProject: { name: contains } },
     ];
     const n = Number(q.replace(/^#/, ""));
     if (Number.isInteger(n) && n > 0) or.push({ customerSeq: n });
@@ -92,7 +94,7 @@ export function buildIssueOrder(sp: SearchParams): Prisma.IssueOrderByWithRelati
   const dir: Prisma.SortOrder = param(sp, "dir") === "asc" ? "asc" : "desc";
   switch (param(sp, "sort")) {
     case "seq":
-      return [{ customer: { name: "asc" } }, { customerSeq: dir }];
+      return [{ customer: { name: "asc" } }, { serviceProject: { name: "asc" } }, { customerSeq: dir }];
     case "recordedOn":
       return [{ recordedOn: { sort: dir, nulls: "last" } }];
     case "dueOn":
@@ -106,6 +108,7 @@ export function buildIssueOrder(sp: SearchParams): Prisma.IssueOrderByWithRelati
 
 export const issueListInclude = {
   customer: { select: { id: true, name: true, shortName: true } },
+  serviceProject: { select: { id: true, name: true } },
   priority: true,
   issueType: true,
   source: true,

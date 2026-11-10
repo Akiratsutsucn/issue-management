@@ -1,4 +1,4 @@
-// 导出：/api/export/list?筛选参数 | /api/export/customer/:id | /api/export/meeting/:id
+// 导出：/api/export/list?筛选参数 | /api/export/customer/:id | /api/export/project/:id | /api/export/meeting/:id
 // 通用参数：forCustomer=1 隐藏内部备注；zip=1 同时打包证据
 import { NextResponse } from "next/server";
 import { dateToYmd } from "@/lib/dates";
@@ -29,10 +29,16 @@ export async function GET(req: Request, ctx: { params: Promise<{ scope: string; 
       const issues = await prisma.issue.findMany({ where: { customerId: id }, orderBy: { customerSeq: "asc" }, include: exportInclude });
       return await exportResponse(issues, c.shortName || c.name, opt, user.id, `customer:${c.name}`);
     }
+    if (scope === "project") {
+      const p = await prisma.serviceProject.findUnique({ where: { id }, include: { customer: true } });
+      if (!p) return NextResponse.json({ error: "服务项目不存在" }, { status: 404 });
+      const issues = await prisma.issue.findMany({ where: { serviceProjectId: id }, orderBy: { customerSeq: "asc" }, include: exportInclude });
+      return await exportResponse(issues, `${p.customer.shortName || p.customer.name}-${p.name}`, opt, user.id, `project:${p.name}`);
+    }
     if (scope === "meeting") {
       const m = await prisma.meetingBatch.findUnique({
         where: { id },
-        include: { customer: true, attendees: { orderBy: { sortOrder: "asc" }, include: { contact: true } } },
+        include: { customer: true, serviceProject: true, attendees: { orderBy: { sortOrder: "asc" }, include: { contact: true } } },
       });
       if (!m) return NextResponse.json({ error: "会谈不存在" }, { status: 404 });
       const issues = await prisma.issue.findMany({ where: { meetingBatchId: id }, orderBy: { customerSeq: "asc" }, include: exportInclude });
@@ -43,7 +49,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ scope: string; 
         .filter(Boolean)
         .join("、");
       const header = {
-        customer: m.customer.name, title: m.title, meetingOn: dateToYmd(m.meetingOn), updatedOn: dateToYmd(m.updatedOn),
+        customer: m.customer.name, project: m.serviceProject?.name ?? "", title: m.title, meetingOn: dateToYmd(m.meetingOn), updatedOn: dateToYmd(m.updatedOn),
         updater: m.updaterText, info: m.informationText, filling: m.fillingNote,
         sourceDocument: m.sourceDocument, division: m.divisionNote, attendees,
       };

@@ -15,7 +15,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ id: st
   const user = await requireUser();
   const m = await prisma.meetingBatch.findUnique({
     where: { id },
-    include: { customer: { include: { contacts: { orderBy: { name: "asc" } } } }, attendees: { orderBy: { sortOrder: "asc" }, include: { contact: true } } },
+    include: { serviceProject: true, customer: { include: { contacts: { orderBy: { name: "asc" } }, projects: { orderBy: { createdAt: "desc" }, select: { id: true, name: true } } } }, attendees: { orderBy: { sortOrder: "asc" }, include: { contact: true } } },
   });
   if (!m) notFound();
   const [issues, users] = await Promise.all([
@@ -30,7 +30,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ id: st
 
   return (
     <main className="page stack">
-      <div className="crumbs"><Link href="/customers">客户</Link> / <Link href={`/customers/${m.customerId}`}>{m.customer.name}</Link> / 会谈</div>
+      <div className="crumbs"><Link href="/customers">客户</Link> / <Link href={`/customers/${m.customerId}`}>{m.customer.name}</Link>{m.serviceProject && <> / <Link href={`/projects/${m.serviceProject.id}`}>{m.serviceProject.name}</Link></>} / 会谈</div>
       <div className="page-head">
         <div>
           <h1>{m.title}</h1>
@@ -39,7 +39,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ id: st
         <div className="row">
           <a className="btn" href={`/api/export/meeting/${id}`}>导出本批次</a>
           <a className="btn" href={`/api/export/meeting/${id}?forCustomer=1`}>导出（给客户）</a>
-          <Link className="btn btn-primary" href={`/issues/new?customer=${m.customerId}&batch=${id}`}>在此下新建课题</Link>
+          <Link className="btn btn-primary" href={m.serviceProjectId ? `/issues/new?project=${m.serviceProjectId}&batch=${id}` : `/issues/new?customer=${m.customerId}&batch=${id}`}>在此下新建课题</Link>
         </div>
       </div>
 
@@ -61,7 +61,7 @@ export default async function MeetingPage({ params }: { params: Promise<{ id: st
         <summary style={{ cursor: "pointer", fontWeight: 600 }}>编辑批次信息与出席</summary>
         <div style={{ marginTop: 14 }}>
           <ActionForm action={saveMeetingAction.bind(null, m.customerId, id)} submitLabel="保存" submitClass="btn btn-primary">
-            <MeetingFields m={m} users={users.filter((u) => u.isActive)} contacts={m.customer.contacts} />
+            <MeetingFields m={m} users={users.filter((u) => u.isActive)} contacts={m.customer.contacts} projects={m.customer.projects} />
           </ActionForm>
         </div>
       </details>
