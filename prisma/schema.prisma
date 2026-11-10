@@ -1,0 +1,486 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  member
+}
+
+enum CustomerStatus {
+  active
+  archived
+}
+
+enum ConfirmationKind {
+  confirmed_requirement
+  suggested_pending
+}
+
+enum IssueStatus {
+  open
+  in_progress
+  answered
+  pending_customer
+  done
+  closed
+}
+
+enum WaitingOn {
+  us
+  customer
+  vendor
+}
+
+enum EvidenceType {
+  config_screenshot
+  test_record
+  customer_confirmation
+  other
+}
+
+enum EntryKind {
+  problem
+  solution
+}
+
+enum AttendanceKind {
+  internal_user
+  contact
+  placeholder
+}
+
+enum LinkType {
+  related
+}
+
+enum ReminderType {
+  due_soon
+  overdue
+  pending_customer_long
+  high_no_assignee
+  high_no_due
+}
+
+enum ReminderStatus {
+  unread
+  read
+}
+
+enum ImportStrategy {
+  skip_existing
+  fill_blanks
+  overwrite_scalars
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  passwordHash   String    @map("password_hash")
+  displayName    String    @map("display_name")
+  aliases        String[]
+  role           UserRole  @default(member)
+  isActive       Boolean   @default(true) @map("is_active")
+  failedLogins   Int       @default(0) @map("failed_logins")
+  lockedUntil    DateTime? @map("locked_until")
+  listColumns    String[]  @map("list_columns")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  sessions       Session[]
+  assignments    IssueAssignee[]
+  notifications  Notification[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique @map("token_hash")
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model TeamSettings {
+  id                         Int     @id @default(1)
+  teamName                   String  @default("") @map("team_name")
+  reminderDueSoonDays        Int     @default(3) @map("reminder_due_soon_days")
+  reminderPendingDays        Int     @default(7) @map("reminder_pending_days")
+  reminderHighNoDueGraceDays Int     @default(1) @map("reminder_high_no_due_grace_days")
+  memberCanCreateCustomer    Boolean @default(true) @map("member_can_create_customer")
+  maxImageBytes              Int     @default(10485760) @map("max_image_bytes")
+  maxAttachmentBytes         Int     @default(20971520) @map("max_attachment_bytes")
+  loginMaxFailures           Int     @default(10) @map("login_max_failures")
+  loginLockMinutes           Int     @default(15) @map("login_lock_minutes")
+
+  @@map("team_settings")
+}
+
+model Priority {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  label       String
+  description String?
+  color       String?
+  sortOrder   Int     @default(0) @map("sort_order")
+  isActive    Boolean @default(true) @map("is_active")
+  issues      Issue[]
+  overrides   CustomerPriorityOverride[]
+
+  @@map("priorities")
+}
+
+model IssueType {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  label       String
+  description String?
+  color       String?
+  sortOrder   Int     @default(0) @map("sort_order")
+  isActive    Boolean @default(true) @map("is_active")
+  issues      Issue[]
+
+  @@map("issue_types")
+}
+
+model Source {
+  id          String  @id @default(cuid())
+  key         String  @unique
+  label       String
+  description String?
+  color       String?
+  sortOrder   Int     @default(0) @map("sort_order")
+  isActive    Boolean @default(true) @map("is_active")
+  issues      Issue[]
+
+  @@map("sources")
+}
+
+model Customer {
+  id        String         @id @default(cuid())
+  name      String         @unique
+  shortName String         @default("") @map("short_name")
+  note      String         @default("")
+  status    CustomerStatus @default(active)
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  contacts  Contact[]
+  meetings  MeetingBatch[]
+  issues    Issue[]
+  overrides CustomerPriorityOverride[]
+
+  @@map("customers")
+}
+
+model CustomerPriorityOverride {
+  id          String   @id @default(cuid())
+  customerId  String   @map("customer_id")
+  priorityId  String   @map("priority_id")
+  description String
+  customer    Customer @relation(fields: [customerId], references: [id])
+  priority    Priority @relation(fields: [priorityId], references: [id])
+
+  @@unique([customerId, priorityId])
+  @@map("customer_priority_overrides")
+}
+
+model Contact {
+  id         String   @id @default(cuid())
+  customerId String   @map("customer_id")
+  name       String
+  title      String   @default("")
+  department String   @default("")
+  phone      String   @default("")
+  email      String   @default("")
+  note       String   @default("")
+  createdAt  DateTime @default(now()) @map("created_at")
+  customer   Customer @relation(fields: [customerId], references: [id])
+
+  reportedIssues  Issue[]           @relation("Reporter")
+  confirmedIssues Issue[]           @relation("ConfirmContact")
+  attendances     MeetingAttendee[]
+
+  @@index([customerId, name])
+  @@map("contacts")
+}
+
+model MeetingBatch {
+  id              String    @id @default(cuid())
+  customerId      String    @map("customer_id")
+  meetingOn       DateTime? @db.Date @map("meeting_on")
+  title           String
+  updatedOn       DateTime? @db.Date @map("updated_on")
+  updaterText     String    @default("") @map("updater_text")
+  updaterUserId   String?   @map("updater_user_id")
+  informationText String    @default("") @map("information_text")
+  fillingNote     String    @default("") @map("filling_note")
+  sourceDocument  String    @default("") @map("source_document")
+  divisionNote    String    @default("") @map("division_note")
+  importFileName  String?   @map("import_file_name")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  customer        Customer  @relation(fields: [customerId], references: [id])
+  attendees       MeetingAttendee[]
+  issues          Issue[]
+
+  @@index([customerId, meetingOn])
+  @@map("meeting_batches")
+}
+
+model MeetingAttendee {
+  id               String         @id @default(cuid())
+  batchId          String         @map("batch_id")
+  kind             AttendanceKind
+  userId           String?        @map("user_id")
+  contactId        String?        @map("contact_id")
+  placeholderLabel String         @default("") @map("placeholder_label")
+  sortOrder        Int            @default(0) @map("sort_order")
+  batch            MeetingBatch   @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  contact          Contact?       @relation(fields: [contactId], references: [id])
+
+  @@map("meeting_attendees")
+}
+
+model Issue {
+  id                         String           @id @default(cuid())
+  customerId                 String           @map("customer_id")
+  meetingBatchId             String?          @map("meeting_batch_id")
+  sourceId                   String?          @map("source_id")
+  issueTypeId                String?          @map("issue_type_id")
+  customerSeq                Int              @map("customer_seq")
+  title                      String           @default("")
+  titleIsDraft               Boolean          @default(false) @map("title_is_draft")
+  priorityId                 String           @map("priority_id")
+  completionCondition        String           @default("") @map("completion_condition")
+  recordedOn                 DateTime?        @db.Date @map("recorded_on")
+  dueOn                      DateTime?        @db.Date @map("due_on")
+  reporterContactId          String?          @map("reporter_contact_id")
+  reporterText               String           @default("") @map("reporter_text")
+  teamAssigned               Boolean          @default(false) @map("team_assigned")
+  assigneeText               String           @default("") @map("assignee_text")
+  confirmationKind           ConfirmationKind @default(suggested_pending) @map("confirmation_kind")
+  waitingOn                  WaitingOn        @default(us) @map("waiting_on")
+  nextAction                 String           @default("") @map("next_action")
+  internalNote               String           @default("") @map("internal_note")
+  firstAnsweredAt            DateTime?        @db.Date @map("first_answered_at")
+  status                     IssueStatus      @default(open)
+  statusChangedAt            DateTime         @default(now()) @map("status_changed_at")
+  completedAt                DateTime?        @db.Date @map("completed_at")
+  completionConfirmedAt      DateTime?        @db.Date @map("completion_confirmed_at")
+  completionConfirmedByUserId String?         @map("completion_confirmed_by_user_id")
+  completionConfirmContactId String?          @map("completion_confirm_contact_id")
+  completionConfirmName      String           @default("") @map("completion_confirm_name")
+  completionConfirmMethod    String           @default("") @map("completion_confirm_method")
+  completionConfirmNote      String           @default("") @map("completion_confirm_note")
+  exceptionalCompletion      Boolean          @default(false) @map("exceptional_completion")
+  exceptionalReason          String           @default("") @map("exceptional_reason")
+  sourceImportId             String?          @map("source_import_id")
+  createdAt                  DateTime         @default(now()) @map("created_at")
+  updatedAt                  DateTime         @updatedAt @map("updated_at")
+  createdById                String           @map("created_by_id")
+  updatedById                String           @map("updated_by_id")
+
+  customer        Customer         @relation(fields: [customerId], references: [id])
+  meetingBatch    MeetingBatch?    @relation(fields: [meetingBatchId], references: [id])
+  source          Source?          @relation(fields: [sourceId], references: [id])
+  issueType       IssueType?       @relation(fields: [issueTypeId], references: [id])
+  priority        Priority         @relation(fields: [priorityId], references: [id])
+  reporterContact Contact?         @relation("Reporter", fields: [reporterContactId], references: [id])
+  confirmContact  Contact?         @relation("ConfirmContact", fields: [completionConfirmContactId], references: [id])
+  assignees       IssueAssignee[]
+  entries         IssueEntry[]
+  evidences       Evidence[]
+  linksFrom       IssueLink[]      @relation("LinkFrom")
+  linksTo         IssueLink[]      @relation("LinkTo")
+  tags            IssueTagOnIssue[]
+  notifications   Notification[]
+
+  @@unique([customerId, customerSeq])
+  @@index([customerId, status])
+  @@index([dueOn])
+  @@index([priorityId, status])
+  @@index([waitingOn, status])
+  @@index([meetingBatchId])
+  @@index([updatedAt(sort: Desc)])
+  @@map("issues")
+}
+
+model IssueAssignee {
+  issueId String @map("issue_id")
+  userId  String @map("user_id")
+  issue   Issue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  user    User   @relation(fields: [userId], references: [id])
+
+  @@id([issueId, userId])
+  @@map("issue_assignees")
+}
+
+model IssueTag {
+  id     String            @id @default(cuid())
+  name   String
+  nameLc String            @unique @map("name_lc")
+  issues IssueTagOnIssue[]
+
+  @@map("issue_tags")
+}
+
+model IssueTagOnIssue {
+  issueId String   @map("issue_id")
+  tagId   String   @map("tag_id")
+  issue   Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  tag     IssueTag @relation(fields: [tagId], references: [id])
+
+  @@id([issueId, tagId])
+  @@map("issue_tags_on_issues")
+}
+
+model IssueEntry {
+  id            String    @id @default(cuid())
+  issueId       String    @map("issue_id")
+  kind          EntryKind
+  body          String
+  authorId      String    @map("author_id")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  withdrawnAt   DateTime? @map("withdrawn_at")
+  withdrawnById String?   @map("withdrawn_by_id")
+  issue         Issue     @relation(fields: [issueId], references: [id])
+
+  @@index([issueId, kind, createdAt])
+  @@map("issue_entries")
+}
+
+/// 富文本中的图片。上传时 ownerType/ownerId 可为空，保存正文时绑定。
+model RichImage {
+  id           String   @id @default(cuid())
+  storageKey   String   @unique @map("storage_key")
+  mime         String
+  size         Int
+  fileName     String   @map("file_name")
+  uploadedById String   @map("uploaded_by_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("rich_images")
+}
+
+model IssueLink {
+  id          String   @id @default(cuid())
+  fromIssueId String   @map("from_issue_id")
+  toIssueId   String   @map("to_issue_id")
+  type        LinkType @default(related)
+  note        String   @default("")
+  createdAt   DateTime @default(now()) @map("created_at")
+  fromIssue   Issue    @relation("LinkFrom", fields: [fromIssueId], references: [id])
+  toIssue     Issue    @relation("LinkTo", fields: [toIssueId], references: [id])
+
+  @@unique([fromIssueId, toIssueId, type])
+  @@map("issue_links")
+}
+
+model Evidence {
+  id           String       @id @default(cuid())
+  issueId      String       @map("issue_id")
+  type         EvidenceType
+  caption      String       @default("")
+  fileName     String       @map("file_name")
+  mime         String
+  size         Int
+  storageKey   String       @unique @map("storage_key")
+  uploadedById String       @map("uploaded_by_id")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  hiddenAt     DateTime?    @map("hidden_at")
+  hiddenById   String?      @map("hidden_by_id")
+  hiddenReason String       @default("") @map("hidden_reason")
+  issue        Issue        @relation(fields: [issueId], references: [id])
+
+  @@index([issueId])
+  @@index([createdAt])
+  @@map("evidences")
+}
+
+/// 课题时间线
+model Activity {
+  id        String   @id @default(cuid())
+  issueId   String   @map("issue_id")
+  actorId   String?  @map("actor_id")
+  action    String
+  summary   String
+  detail    Json?
+  at        DateTime @default(now())
+
+  @@index([issueId, at])
+  @@map("activities")
+}
+
+/// 全局操作日志：只增，应用层不提供改删
+model AuditLog {
+  id         String   @id @default(cuid())
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id")
+  action     String
+  actorId    String?  @map("actor_id")
+  summary    String
+  before     Json?
+  after      Json?
+  isException Boolean @default(false) @map("is_exception")
+  at         DateTime @default(now())
+
+  @@index([entityType, entityId, at])
+  @@index([actorId, at])
+  @@index([at])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String         @id @default(cuid())
+  userId    String         @map("user_id")
+  issueId   String         @map("issue_id")
+  type      ReminderType
+  reason    String
+  dayKey    String         @map("day_key")
+  status    ReminderStatus @default(unread)
+  createdAt DateTime       @default(now()) @map("created_at")
+  readAt    DateTime?      @map("read_at")
+  user      User           @relation(fields: [userId], references: [id])
+  issue     Issue          @relation(fields: [issueId], references: [id])
+
+  @@unique([userId, issueId, type, dayKey])
+  @@index([userId, status, createdAt])
+  @@map("notifications")
+}
+
+model ImportJob {
+  id         String         @id @default(cuid())
+  fileName   String         @map("file_name")
+  status     String         @default("preview")
+  strategy   ImportStrategy @default(fill_blanks)
+  preview    Json
+  report     Json?
+  createdById String        @map("created_by_id")
+  createdAt  DateTime       @default(now()) @map("created_at")
+  finishedAt DateTime?      @map("finished_at")
+
+  @@map("import_jobs")
+}
+
+model JobRun {
+  id        String   @id @default(cuid())
+  job       String
+  ok        Boolean
+  message   String
+  at        DateTime @default(now())
+
+  @@index([job, at])
+  @@map("job_runs")
+}

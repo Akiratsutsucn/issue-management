@@ -1,0 +1,47 @@
+name: issue-desk
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: issue_desk
+      POSTGRES_USER: issue_desk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 设置 POSTGRES_PASSWORD}
+      TZ: Asia/Shanghai
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U issue_desk -d issue_desk"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org/}
+    image: issue-desk:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://issue_desk:${POSTGRES_PASSWORD}@db:5432/issue_desk?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:?请在 .env 设置 AUTH_SECRET}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      TZ: Asia/Shanghai
+      STORAGE_ROOT: /data/storage
+      STORAGE_DRIVER: local
+      REMINDERS_ENABLED: ${REMINDERS_ENABLED:-true}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-}
+    ports:
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-3000}:3000"
+    volumes:
+      - storage:/data/storage
+
+volumes:
+  db-data:
+  storage:
