@@ -11,7 +11,7 @@ const nextConfig = {
   poweredByHeader: false,
   serverExternalPackages: ["exceljs", "sanitize-html"],
   // exceljs 依赖链中有动态加载的 .mjs，standalone 追踪不到，显式带上
-  outputFileTracingIncludes: { "/**": ["./node_modules/generator-function/**"] },
+  outputFileTracingIncludes: { "/**": ["./node_modules/generator-function/**", "./node_modules/async-function/**"] },
   experimental: { serverActions: { bodySizeLimit: "2mb" } },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
