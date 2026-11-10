@@ -119,7 +119,7 @@ export default function IssueForm(p: Props) {
         <h2>基本</h2>
         <div className="form-grid">
           <label className="field span-4">
-            <span>課題タイトル（标题）</span>
+            <span>課題（标题）</span>
             <input type="text" name="title" defaultValue={v.title} maxLength={300} placeholder="可暂空，空则标「标题待补」" />
           </label>
           <label className="field">
