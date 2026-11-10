@@ -71,6 +71,9 @@ describe("Excel 导入解析", () => {
     expect(mapStatus("").status).toBe("open");
     expect(mapStatus("奇怪").warning).toBeTruthy();
     expect(mapStatus("待客户确认").status).toBe("pending_customer");
+    expect(mapStatus("未完成").status).toBe("open");
+    expect(mapStatus("未完了").status).toBe("open");
+    expect(mapStatus("尚未回答").status).toBe("open");
     expect(splitNames("a, b，a")).toEqual(["a", "b"]);
     expect(parseFootnote("第3~5项为建议").get(4)).toBe("suggested_pending");
   });

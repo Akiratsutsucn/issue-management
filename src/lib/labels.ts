@@ -34,6 +34,12 @@ export const LIST_COLUMNS = [
   { key: "tags", label: "标签", required: false },
   { key: "firstAnswered", label: "首次回答日", required: false },
   { key: "completedAt", label: "完成日", required: false },
+  { key: "confirmation", label: "客户确认", required: false },
+  { key: "evidence", label: "证据数", required: false },
+  { key: "links", label: "关联课题", required: false },
+  { key: "internalNote", label: "内部备注", required: false },
+  { key: "createdBy", label: "创建者", required: false },
+  { key: "updatedBy", label: "更新者", required: false },
 ] as const;
 
 export type ColumnKey = (typeof LIST_COLUMNS)[number]["key"];

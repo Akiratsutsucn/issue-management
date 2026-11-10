@@ -189,3 +189,16 @@ export async function updateIssue(issueId: string, f: IssueFieldsInput, user: Se
   });
   refreshRemindersSafely(issueId);
 }
+
+/** 批量追加担当：只新增一条担当关系，不重新校验整张表单 */
+export async function addAssignee(issueId: string, userId: string, userName: string, user: SessionUser): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const cur = await tx.issue.findUnique({ where: { id: issueId }, include: { assignees: true } });
+    if (!cur) throw new UserError("课题不存在");
+    if (cur.assignees.some((a) => a.userId === userId)) return;
+    await tx.issueAssignee.create({ data: { issueId, userId } });
+    await tx.issue.update({ where: { id: issueId }, data: { updatedById: user.id } });
+    await recordIssueEvent(tx, issueId, user.id, "update", `追加担当 ${userName}`);
+  });
+  refreshRemindersSafely(issueId);
+}

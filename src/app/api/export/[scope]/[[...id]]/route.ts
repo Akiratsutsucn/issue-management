@@ -30,12 +30,22 @@ export async function GET(req: Request, ctx: { params: Promise<{ scope: string; 
       return await exportResponse(issues, c.shortName || c.name, opt, user.id, `customer:${c.name}`);
     }
     if (scope === "meeting") {
-      const m = await prisma.meetingBatch.findUnique({ where: { id }, include: { customer: true } });
+      const m = await prisma.meetingBatch.findUnique({
+        where: { id },
+        include: { customer: true, attendees: { orderBy: { sortOrder: "asc" }, include: { contact: true } } },
+      });
       if (!m) return NextResponse.json({ error: "会谈不存在" }, { status: 404 });
       const issues = await prisma.issue.findMany({ where: { meetingBatchId: id }, orderBy: { customerSeq: "asc" }, include: exportInclude });
+      const userIds = m.attendees.map((a) => a.userId).filter((x): x is string => !!x);
+      const users = await prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, displayName: true } });
+      const attendees = m.attendees
+        .map((a) => (a.kind === "internal_user" ? users.find((u) => u.id === a.userId)?.displayName : a.kind === "contact" ? a.contact?.name : `${a.placeholderLabel}（待补）`))
+        .filter(Boolean)
+        .join("、");
       const header = {
         customer: m.customer.name, title: m.title, meetingOn: dateToYmd(m.meetingOn), updatedOn: dateToYmd(m.updatedOn),
         updater: m.updaterText, info: m.informationText, filling: m.fillingNote,
+        sourceDocument: m.sourceDocument, division: m.divisionNote, attendees,
       };
       return await exportResponse(issues, `${m.customer.shortName || m.customer.name}-${m.title}`, { ...opt, header }, user.id, `meeting:${m.title}`);
     }

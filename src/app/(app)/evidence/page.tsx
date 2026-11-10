@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import Link from "next/link";
 import EvidenceThumbs from "@/components/EvidenceThumbs";
 import { TitleText } from "@/components/Pills";
@@ -7,6 +8,7 @@ import { prisma } from "@/lib/server/db";
 import { param, type SearchParams } from "@/lib/server/issue-query";
 
 export default async function EvidencePage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  await requireUser();
   const sp = await searchParams;
   const customer = param(sp, "customer");
   const type = param(sp, "type");

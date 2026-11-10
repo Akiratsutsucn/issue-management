@@ -1,5 +1,5 @@
 // 概览统计。数字块直接复用列表筛选条件，保证与列表一致。
-import { dateToYmd, diffDays, shanghaiYmd } from "../dates";
+import { addDays, dateToYmd, diffDays, shanghaiYmd, todayShanghai } from "../dates";
 import { UNFINISHED } from "../status";
 import { prisma } from "./db";
 import { buildIssueWhere, type SearchParams } from "./issue-query";
@@ -13,7 +13,9 @@ export function median(xs: number[]): number | null {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
-export async function overviewStats(pendingDays: number) {
+export async function overviewStats(pendingDays: number, highNoDueGraceDays: number) {
+  // 与提醒同口径：创建日距今满宽限天数才计入缺期限
+  const createdTo = addDays(todayShanghai(), -highNoDueGraceDays);
   const high = await prisma.priority.findUnique({ where: { key: "high" } });
   const highId = high?.id ?? "__none__";
   const unfinishedWhere = { status: { in: UNFINISHED } };
@@ -25,7 +27,7 @@ export async function overviewStats(pendingDays: number) {
     count({ dueSoon: "1" }),
     count({ pendingLong: String(pendingDays) }),
     count({ priority: highId, assignee: "none" }),
-    count({ priority: highId, noDue: "1" }),
+    count({ priority: highId, noDue: "1", createdTo }),
   ]);
 
   const [byStatus, byPriority, byWaiting, byCustomer, byAssignee, unassigned] = await Promise.all([
@@ -58,6 +60,7 @@ export async function overviewStats(pendingDays: number) {
     highNoAssignee,
     highNoDue,
     highId,
+    createdTo,
     byStatus: Object.fromEntries(byStatus.map((s) => [s.status, s._count])),
     byPriority: priorities.map((p) => ({ id: p.id, label: p.label, color: p.color, n: byPriority.find((b) => b.priorityId === p.id)?._count ?? 0 })),
     byWaiting: Object.fromEntries(byWaiting.map((w) => [w.waitingOn, w._count])),

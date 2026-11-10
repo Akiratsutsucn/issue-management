@@ -93,6 +93,8 @@ function matchLabel(cell: string, labels: string[]): boolean {
 
 export function mapStatus(t: string): { status: IssueStatus; warning?: string } {
   if (!t) return { status: "open" };
+  // 否定词优先：「未完成」「未完了」「尚未回答」等不是完成或回答
+  if (/^(未|尚未|没有|没|無|无)/.test(t.trim())) return { status: "open", warning: `源表状态「${t}」按待处理导入` };
   for (const [re, st] of STATUS_MAP) {
     if (re.test(t)) {
       if (st === "done") return { status: "pending_customer", warning: `源表状态「${t}」：导入为待客户确认，须补证据与客户确认后再完成` };

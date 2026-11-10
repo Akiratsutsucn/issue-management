@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import Link from "next/link";
 import ActionForm from "@/components/ActionForm";
 import ImportUpload from "@/components/ImportUpload";
@@ -14,6 +15,7 @@ function Steps({ on }: { on: number }) {
 }
 
 export default async function ImportPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  await requireUser();
   const sp = await searchParams;
   const jobId = param(sp, "job");
   const job = jobId ? await prisma.importJob.findUnique({ where: { id: jobId } }) : null;

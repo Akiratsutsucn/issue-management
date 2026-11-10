@@ -33,6 +33,9 @@ export interface BatchHeader {
   updater: string;
   info: string;
   filling: string;
+  sourceDocument: string;
+  division: string;
+  attendees: string;
 }
 
 export interface ExportOptions {
@@ -67,8 +70,11 @@ export async function buildWorkbook(issues: ExportIssue[], opt: ExportOptions): 
       ["客先", h.customer],
       ["会谈", `${h.title}${h.meetingOn ? `（${h.meetingOn}）` : ""}`],
       ["更新日 / 更新者", `${h.updatedOn || "—"} / ${h.updater || "—"}`],
+      ["出席", h.attendees],
       ["会谈信息", h.info],
       ["填写口径", h.filling],
+      ["来源文档", h.sourceDocument],
+      ["分工建议", h.division],
     ];
     for (const [k, v] of rows) {
       ws.getRow(r).values = [k, v];
@@ -80,7 +86,7 @@ export async function buildWorkbook(issues: ExportIssue[], opt: ExportOptions): 
   }
   const headers = [
     "番号", "課題タイトル", "優先度", "完了条件（Goal）", "記載日", "起票者", "担当者", "問題点", "解決案", "期限", "状態",
-    "客户", "确认类别", "课题类型", "待谁处理", "下一步行动", "首次回答日", "完成日", "客户确认", "证据数量", "关联番号", "更新时间",
+    "客户", "会谈/批次", "确认类别", "课题类型", "待谁处理", "下一步行动", "首次回答日", "完成日", "客户确认", "证据数量", "关联番号", "更新时间",
     ...(opt.forCustomer ? [] : ["内部备注"]),
   ];
   const headRow = ws.getRow(r);
@@ -96,14 +102,14 @@ export async function buildWorkbook(issues: ExportIssue[], opt: ExportOptions): 
       i.customerSeq, i.title || "（标题待补）", i.priority.label, richToText(i.completionCondition), dateToYmd(i.recordedOn),
       i.reporterContact?.name ?? i.reporterText, assignees, entriesText(i, "problem"), entriesText(i, "solution"),
       dateToYmd(i.dueOn), STATUS_LABEL[i.status],
-      i.customer.name, CONFIRM_LABEL[i.confirmationKind], i.issueType?.label ?? "", WAITING_LABEL[i.waitingOn], i.nextAction,
+      i.customer.name, i.meetingBatch?.title ?? "", CONFIRM_LABEL[i.confirmationKind], i.issueType?.label ?? "", WAITING_LABEL[i.waitingOn], i.nextAction,
       dateToYmd(i.firstAnsweredAt), dateToYmd(i.completedAt), confirm, i.evidences.length, linkSeqs(i), fmtDateTime(i.updatedAt),
       ...(opt.forCustomer ? [] : [richToText(i.internalNote)]),
     ];
     row.font = font;
     row.alignment = { vertical: "top", wrapText: true };
   }
-  const widths = [6, 30, 7, 30, 11, 10, 14, 44, 44, 11, 10, 16, 16, 9, 9, 24, 11, 11, 18, 8, 12, 16, 30];
+  const widths = [6, 30, 7, 30, 11, 10, 14, 44, 44, 11, 10, 16, 18, 16, 9, 9, 24, 11, 11, 18, 8, 12, 16, 30];
   widths.slice(0, headers.length).forEach((w, k) => (ws.getColumn(k + 1).width = w));
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

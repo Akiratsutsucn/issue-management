@@ -44,4 +44,15 @@ describe("附件规则", () => {
     expect(checkFile("a.exe", "", 100, TXT, opt).ok).toBe(false);
     expect(checkFile("a.png", "image/png", 0, PNG, opt).ok).toBe(false);
   });
+
+  it("改名为 txt 的音频与二进制被拒绝", () => {
+    const mp3NoTag = new Uint8Array([0xff, 0xf3, 0x44, 0xc4, 0, 0, 0, 0]);
+    const adts = new Uint8Array([0xff, 0xf1, 0x50, 0x80, 0, 0, 0, 0]);
+    const flac = new TextEncoder().encode("fLaC....");
+    expect(checkFile("a.txt", "text/plain", 8, mp3NoTag, opt)).toEqual({ ok: false, error: AV_REJECT_MESSAGE });
+    expect(checkFile("a.txt", "text/plain", 8, adts, opt)).toEqual({ ok: false, error: AV_REJECT_MESSAGE });
+    expect(checkFile("a.txt", "text/plain", 8, flac, opt)).toEqual({ ok: false, error: AV_REJECT_MESSAGE });
+    expect(checkFile("a.txt", "text/plain", 4, new Uint8Array([0x41, 0, 0x02, 0x41]), opt).ok).toBe(false);
+    expect(checkFile("a.txt", "text/plain", 9, new TextEncoder().encode("中文\t内容\n"), opt).ok).toBe(true);
+  });
 });

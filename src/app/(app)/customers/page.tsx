@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import Link from "next/link";
 import ActionForm from "@/components/ActionForm";
 import { fmtDateTime, todayShanghai, ymdToDate } from "@/lib/dates";
@@ -50,6 +51,7 @@ function Table({ rows }: { rows: Awaited<ReturnType<typeof loadRows>> }) {
 }
 
 export default async function CustomersPage() {
+  await requireUser();
   const [active, archived] = await Promise.all([loadRows("active"), loadRows("archived")]);
   return (
     <main className="page stack">

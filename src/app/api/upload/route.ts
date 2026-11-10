@@ -1,6 +1,6 @@
 // 上传：正文图片（purpose=rich）或证据（purpose=evidence）。服务端二次校验类型与大小，拒绝音视频。
 import { NextResponse } from "next/server";
-import { checkFile } from "@/lib/file-rules";
+import { checkFile, HEAD_BYTES } from "@/lib/file-rules";
 import { EVIDENCE_TYPES } from "@/lib/validation";
 import { apiUser } from "@/lib/server/auth";
 import { prisma } from "@/lib/server/db";
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
 
   const settings = await getSettings();
   const buf = Buffer.from(await file.arrayBuffer());
-  const check = checkFile(file.name, file.type, buf.length, new Uint8Array(buf.subarray(0, 16)), {
+  const check = checkFile(file.name, file.type, buf.length, new Uint8Array(buf.subarray(0, HEAD_BYTES)), {
     imagesOnly: purpose === "rich",
     maxImageBytes: settings.maxImageBytes,
     maxAttachmentBytes: settings.maxAttachmentBytes,

@@ -46,7 +46,12 @@ export function sniffMime(head: Uint8Array): string | null {
   // 音视频常见文件头
   if (at(4, 0x66, 0x74, 0x79, 0x70)) return "video/mp4"; // ftyp: mp4/mov/m4a
   if (at(0, 0x1a, 0x45, 0xdf, 0xa3)) return "video/webm";
-  if (at(0, 0x49, 0x44, 0x33) || at(0, 0xff, 0xfb)) return "audio/mpeg";
+  if (at(0, 0x49, 0x44, 0x33) || (b[0] === 0xff && (b[1] & 0xe0) === 0xe0)) return "audio/mpeg"; // ID3 / MPEG 帧同步（含 AAC ADTS）
+  if (at(0, 0x66, 0x4c, 0x61, 0x43)) return "audio/flac";
+  if (at(0, 0x30, 0x26, 0xb2, 0x75)) return "video/x-ms-asf"; // WMV/WMA
+  if (at(0, 0x46, 0x4c, 0x56)) return "video/x-flv";
+  if (at(0, 0x23, 0x21, 0x41, 0x4d, 0x52)) return "audio/amr";
+  if (at(0, 0x00, 0x00, 0x01, 0xba) || at(0, 0x00, 0x00, 0x01, 0xb3)) return "video/mpeg";
   if (at(0, 0x4f, 0x67, 0x67, 0x53)) return "audio/ogg";
   if (at(0, 0x52, 0x49, 0x46, 0x46) && (at(8, 0x57, 0x41, 0x56, 0x45) || at(8, 0x41, 0x56, 0x49, 0x20))) return "audio/wav";
   return null;
@@ -80,11 +85,23 @@ export function checkFile(fileName: string, declaredMime: string, size: number, 
     if (ext === "pdf" && sniffed !== "application/pdf") return { ok: false, error: "PDF 内容无效" };
     if ((ext === "docx" || ext === "xlsx") && sniffed !== "application/zip") return { ok: false, error: "文档内容与扩展名不符" };
     if ((ext === "doc" || ext === "xls") && sniffed !== "application/x-ole") return { ok: false, error: "文档内容与扩展名不符" };
-    if (ext === "txt" && sniffed) return { ok: false, error: "文本文件内容无效" };
+    if (ext === "txt" && (sniffed || !looksLikeText(head))) return { ok: false, error: "文本文件内容无效" };
     if (size > opt.maxAttachmentBytes) return { ok: false, error: `文件超过 ${mb(opt.maxAttachmentBytes)}` };
   }
   return { ok: true, mime, isImage };
 }
+
+/** 文本文件：开头不得含 NUL 或非常用控制字符 */
+export function looksLikeText(head: Uint8Array): boolean {
+  for (const c of head) {
+    if (c === 0) return false;
+    if (c < 0x20 && c !== 0x09 && c !== 0x0a && c !== 0x0d && c !== 0x0c && c !== 0x1b) return false;
+  }
+  return true;
+}
+
+/** 校验时传入的文件头长度 */
+export const HEAD_BYTES = 4096;
 
 function mb(n: number): string {
   return `${Math.round(n / 1048576)}MB`;

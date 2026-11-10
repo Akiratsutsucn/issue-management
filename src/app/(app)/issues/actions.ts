@@ -6,7 +6,7 @@ import { firstError, issueCreateSchema, issueFieldsSchema, STATUSES } from "@/li
 import type { IssueStatus } from "@/lib/status";
 import { requireUser } from "@/lib/server/auth";
 import { prisma } from "@/lib/server/db";
-import { createIssue, updateIssue, UserError } from "@/lib/server/issues";
+import { addAssignee, createIssue, updateIssue, UserError } from "@/lib/server/issues";
 import {
   addEntry,
   changeStatus,
@@ -215,22 +215,12 @@ export async function bulkAction(_p: FormState, fd: FormData): Promise<FormState
     const target = await prisma.user.findFirst({ where: { id: uid, isActive: true } });
     if (!target) return { error: "请选择担当" };
     for (const id of ids) {
-      const cur = await prisma.issue.findUnique({ where: { id }, include: { assignees: true, tags: { include: { tag: true } } } });
-      if (!cur) continue;
-      if (cur.assignees.some((a) => a.userId === uid)) {
+      try {
+        await addAssignee(id, target.id, target.displayName, user);
         ok++;
-        continue;
+      } catch (e) {
+        failed.push(e instanceof UserError ? e.message : "保存失败");
       }
-      await updateIssue(
-        id,
-        {
-          ...pickFields(cur),
-          assigneeIds: [...cur.assignees.map((a) => a.userId), uid],
-          tags: cur.tags.map((t) => t.tag.name).join(","),
-        },
-        user,
-      );
-      ok++;
     }
   } else {
     return { error: "操作无效" };
@@ -239,31 +229,16 @@ export async function bulkAction(_p: FormState, fd: FormData): Promise<FormState
   return failed.length ? { error: `成功 ${ok} 条，失败 ${failed.length} 条：${[...new Set(failed)].join("；")}` } : { error: "", ok: `已处理 ${ok} 条` };
 }
 
-function pickFields(i: Awaited<ReturnType<typeof prisma.issue.findUnique>> & object) {
-  const ymd = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "");
-  return {
-    meetingBatchId: i.meetingBatchId,
-    sourceId: i.sourceId,
-    issueTypeId: i.issueTypeId,
-    title: i.title,
-    priorityId: i.priorityId,
-    confirmationKind: i.confirmationKind,
-    recordedOn: ymd(i.recordedOn),
-    dueOn: ymd(i.dueOn),
-    waitingOn: i.waitingOn,
-    nextAction: i.nextAction,
-    reporterContactId: i.reporterContactId,
-    reporterText: i.reporterText,
-    teamAssigned: i.teamAssigned,
-    assigneeText: i.assigneeText,
-    completionCondition: i.completionCondition,
-    internalNote: i.internalNote,
-  };
-}
-
 export async function saveColumnsAction(fd: FormData): Promise<void> {
   const user = await requireUser();
-  const cols = fd.getAll("cols").map(String).slice(0, 40);
+  // 勾选的列按用户填写的序号排序
+  const cols = fd
+    .getAll("cols")
+    .map(String)
+    .slice(0, 40)
+    .map((k, i) => ({ k, o: Number(fd.get(`order_${k}`)) || 100 + i }))
+    .sort((a, b) => a.o - b.o)
+    .map((x) => x.k);
   await prisma.user.update({ where: { id: user.id }, data: { listColumns: cols } });
   revalidatePath("/issues");
   redirect("/issues");

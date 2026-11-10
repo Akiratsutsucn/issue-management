@@ -103,20 +103,31 @@ async function ensureBatch(tx: Tx, cache: Map<string, string>, customerId: strin
 }
 
 export async function executeImport(jobId: string, input: ExecuteInput, user: SessionUser): Promise<ImportReport> {
-  const job = await prisma.importJob.findUnique({ where: { id: jobId } });
-  if (!job || job.status !== "preview") throw new Error("导入任务不存在或已执行");
+  // 原子认领任务，防止重复提交执行两次
+  const claimed = await prisma.importJob.updateMany({ where: { id: jobId, status: "preview" }, data: { status: "running" } });
+  if (claimed.count === 0) throw new Error("导入任务不存在或已执行");
+  const job = await prisma.importJob.findUniqueOrThrow({ where: { id: jobId } });
   const pv = job.preview as unknown as PreviewData;
   const medium = await prisma.priority.findUnique({ where: { key: "medium" } });
   if (!medium) throw new Error("缺少默认优先级");
   const today = todayShanghai();
 
-  const report = await prisma.$transaction(
+  const settings = await prisma.teamSettings.findUnique({ where: { id: 1 } });
+  const pendingLinks: [string, string][] = [];
+  let report: ImportReport;
+  try {
+  report = await prisma.$transaction(
     async (tx) => {
       let customerId = input.customerId;
       if (!customerId) {
         const name = input.newCustomerName.trim();
         if (!name) throw new Error("请选择或新建目标客户");
-        const c = (await tx.customer.findUnique({ where: { name } })) ?? (await tx.customer.create({ data: { name } }));
+        let c = await tx.customer.findUnique({ where: { name } });
+        if (!c) {
+          if (user.role !== "admin" && settings && !settings.memberCanCreateCustomer) throw new Error("请选择已有客户：当前设置不允许成员新建客户");
+          c = await tx.customer.create({ data: { name } });
+          await writeAudit(tx, { entityType: "customer", entityId: c.id, action: "create", actorId: user.id, summary: `导入时新建客户 ${name}` });
+        }
         customerId = c.id;
       }
       const h = pv.header;
@@ -160,12 +171,18 @@ export async function executeImport(jobId: string, input: ExecuteInput, user: Se
             continue;
           }
           const data: Record<string, unknown> = { updatedById: user.id, sourceImportId: jobId };
-          for (const [k, v] of Object.entries(scalars)) {
+          const overwrite = input.strategy === "overwrite_scalars";
+          // 默认值（未识别优先度、默认确认类别、标题待补标记）不得覆盖已有数据
+          const { titleIsDraft: _d, priorityId: _p, confirmationKind: _k, ...plain } = scalars;
+          for (const [k, v] of Object.entries(plain)) {
             const cur = (existing as Record<string, unknown>)[k];
-            const blank = cur === null || cur === "" || (k === "titleIsDraft" && cur === true);
-            if (input.strategy === "overwrite_scalars" ? v !== "" && v !== null : blank) data[k] = v;
+            const blank = cur === null || cur === "";
+            if (overwrite ? v !== "" && v !== null : blank) data[k] = v;
           }
           if (data.title) data.titleIsDraft = false;
+          if (overwrite && pv.priorityMatch[row.priorityText]) data.priorityId = pv.priorityMatch[row.priorityText];
+          const chosenKind = input.kinds[row.rowNo];
+          if (overwrite && chosenKind && (chosenKind !== "suggested_pending" || row.confirmationKind !== "suggested_pending")) data.confirmationKind = chosenKind;
           await tx.issue.update({ where: { id: existing.id }, data });
           // 问题点/解决案只追加，不覆盖
           let appended = 0;
@@ -209,17 +226,11 @@ export async function executeImport(jobId: string, input: ExecuteInput, user: Se
         r.rows.push({ rowNo: row.rowNo, result: `创建 #${seq}`, issueId: issue.id, seq });
       }
 
-      // 建议的关联：失败不阻断
       for (const row of pv.rows) {
         const from = row.seq ? seqToId.get(row.seq) : undefined;
         for (const ref of row.refs) {
           const to = seqToId.get(ref);
-          if (!from || !to || from === to) continue;
-          const exists = await tx.issueLink.findFirst({ where: { OR: [{ fromIssueId: from, toIssueId: to }, { fromIssueId: to, toIssueId: from }] } });
-          if (!exists) {
-            await tx.issueLink.create({ data: { fromIssueId: from, toIssueId: to, note: "导入时按「本表第 n 项」建立" } });
-            r.linked++;
-          }
+          if (from && to && from !== to) pendingLinks.push([from, to]);
         }
       }
       await tx.importJob.update({ where: { id: jobId }, data: { status: "done", strategy: input.strategy, report: r as unknown as Prisma.InputJsonValue, finishedAt: new Date() } });
@@ -231,5 +242,24 @@ export async function executeImport(jobId: string, input: ExecuteInput, user: Se
     },
     { timeout: 120_000 },
   );
+  } catch (e) {
+    await prisma.importJob.update({ where: { id: jobId }, data: { status: "preview" } }).catch(() => undefined);
+    throw e;
+  }
+  // 建议的关联在主事务之后单独建立：失败不阻断导入
+  for (const [from, to] of pendingLinks) {
+    try {
+      const exists = await prisma.issueLink.findFirst({ where: { OR: [{ fromIssueId: from, toIssueId: to }, { fromIssueId: to, toIssueId: from }] } });
+      if (!exists) {
+        await prisma.issueLink.create({ data: { fromIssueId: from, toIssueId: to, note: "导入时按「本表第 n 项」建立" } });
+        report.linked++;
+      }
+    } catch (e) {
+      console.error("[import] link failed:", e instanceof Error ? e.message : e);
+    }
+  }
+  if (report.linked) {
+    await prisma.importJob.update({ where: { id: jobId }, data: { report: report as unknown as Prisma.InputJsonValue } }).catch(() => undefined);
+  }
   return report;
 }

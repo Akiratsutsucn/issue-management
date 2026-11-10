@@ -22,7 +22,14 @@ export async function openReminderAction(id: string): Promise<void> {
 
 export async function markAllReadAction(): Promise<void> {
   const user = await requireUser();
-  await prisma.notification.updateMany({ where: { userId: user.id, status: "unread" }, data: { status: "read", readAt: new Date() } });
+  const unread = await prisma.notification.findMany({ where: { userId: user.id, status: "unread" }, select: { id: true, issueId: true } });
+  if (!unread.length) return;
+  await prisma.$transaction([
+    prisma.notification.updateMany({ where: { id: { in: unread.map((n) => n.id) } }, data: { status: "read", readAt: new Date() } }),
+    prisma.activity.createMany({
+      data: [...new Set(unread.map((n) => n.issueId))].map((issueId) => ({ issueId, actorId: user.id, action: "reminder_read", summary: "提醒已读（全部标为已读）" })),
+    }),
+  ]);
   revalidatePath("/", "layout");
 }
 

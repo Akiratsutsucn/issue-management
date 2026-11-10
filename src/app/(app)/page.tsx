@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import Link from "next/link";
 import { Dot } from "@/components/Pills";
 import { WAITING_LABEL } from "@/lib/labels";
@@ -6,8 +7,9 @@ import { getSettings } from "@/lib/server/settings";
 import { overviewStats } from "@/lib/server/stats";
 
 export default async function OverviewPage() {
+  await requireUser();
   const settings = await getSettings();
-  const s = await overviewStats(settings.reminderPendingDays);
+  const s = await overviewStats(settings.reminderPendingDays, settings.reminderHighNoDueGraceDays);
 
   if (s.total === 0) {
     return (
@@ -61,7 +63,7 @@ export default async function OverviewPage() {
           <span className="small muted">
             <Link href={`/issues?priority=${s.highId}&assignee=none`}>缺担当 {s.highNoAssignee}</Link>
             {" · "}
-            <Link href={`/issues?priority=${s.highId}&noDue=1`}>缺期限 {s.highNoDue}</Link>
+            <Link href={`/issues?priority=${s.highId}&noDue=1&createdTo=${s.createdTo}`}>缺期限 {s.highNoDue}</Link>
           </span>
         </div>
       </section>

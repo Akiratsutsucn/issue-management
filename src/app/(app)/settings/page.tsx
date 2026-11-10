@@ -92,6 +92,8 @@ export default async function SettingsPage() {
             <label className="field"><span>高优先缺期限宽限（天）</span><input type="number" name="reminderHighNoDueGraceDays" defaultValue={s.reminderHighNoDueGraceDays} min={0} max={30} /></label>
             <label className="field"><span>图片上限（MB）</span><input type="number" name="maxImageMb" defaultValue={mb(s.maxImageBytes)} min={1} max={50} /></label>
             <label className="field"><span>附件上限（MB）</span><input type="number" name="maxAttachmentMb" defaultValue={mb(s.maxAttachmentBytes)} min={1} max={100} /></label>
+            <label className="field"><span>登录连续失败次数上限</span><input type="number" name="loginMaxFailures" defaultValue={s.loginMaxFailures} min={3} max={50} /></label>
+            <label className="field"><span>锁定时长（分钟）</span><input type="number" name="loginLockMinutes" defaultValue={s.loginLockMinutes} min={1} max={1440} /></label>
             <label className="check" style={{ alignSelf: "end", paddingBottom: 8 }}><input type="checkbox" name="memberCanCreateCustomer" defaultChecked={s.memberCanCreateCustomer} />允许成员新建客户</label>
           </div>
           <p className="hint">邮件、企微通知为二期，当前未启用。</p>

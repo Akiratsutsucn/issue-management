@@ -101,6 +101,8 @@ export const settingsSchema = z.object({
   memberCanCreateCustomer: z.boolean(),
   maxImageMb: z.coerce.number().int().min(1).max(50),
   maxAttachmentMb: z.coerce.number().int().min(1).max(100),
+  loginMaxFailures: z.coerce.number().int().min(3).max(50),
+  loginLockMinutes: z.coerce.number().int().min(1).max(1440),
 });
 
 export function splitList(s: string): string[] {

@@ -1,7 +1,7 @@
 // 课题列表筛选：URL 参数 → Prisma where/orderBy
 import type { Prisma } from "@prisma/client";
 import { addDays, isYmd, todayShanghai, ymdToDate } from "../dates";
-import { STATUSES } from "../validation";
+import { CONFIRM_KIND, STATUSES, WAITING } from "../validation";
 import { UNFINISHED, type IssueStatus } from "../status";
 import { prisma } from "./db";
 
@@ -21,6 +21,10 @@ function dateParam(sp: SearchParams, k: string): Date | null {
   return isYmd(v) ? ymdToDate(v) : null;
 }
 
+function shanghaiDayStart(ymd: string): Date {
+  return new Date(`${ymd}T00:00:00+08:00`);
+}
+
 export function buildIssueWhere(sp: SearchParams): Prisma.IssueWhereInput {
   const and: Prisma.IssueWhereInput[] = [];
   const statusRaw = param(sp, "status");
@@ -28,8 +32,8 @@ export function buildIssueWhere(sp: SearchParams): Prisma.IssueWhereInput {
     const sts = statusRaw ? list(sp, "status").filter((s): s is IssueStatus => (STATUSES as readonly string[]).includes(s)) : UNFINISHED;
     and.push({ status: { in: sts.length ? sts : UNFINISHED } });
   }
-  const eq = (k: string, field: keyof Prisma.IssueWhereInput) => {
-    const vs = list(sp, k);
+  const eq = (k: string, field: keyof Prisma.IssueWhereInput, allowed?: readonly string[]) => {
+    const vs = list(sp, k).filter((v) => !allowed || allowed.includes(v));
     if (vs.length) and.push({ [field]: { in: vs } } as Prisma.IssueWhereInput);
   };
   eq("customer", "customerId");
@@ -38,8 +42,8 @@ export function buildIssueWhere(sp: SearchParams): Prisma.IssueWhereInput {
   eq("type", "issueTypeId");
   eq("source", "sourceId");
   eq("reporter", "reporterContactId");
-  eq("confirm", "confirmationKind");
-  eq("waiting", "waitingOn");
+  eq("confirm", "confirmationKind", CONFIRM_KIND);
+  eq("waiting", "waitingOn", WAITING);
 
   const assignee = param(sp, "assignee");
   if (assignee === "none") and.push({ assignees: { none: {} } });
@@ -51,9 +55,12 @@ export function buildIssueWhere(sp: SearchParams): Prisma.IssueWhereInput {
   if (param(sp, "noDue") === "1") and.push({ dueOn: null });
   if (param(sp, "draft") === "1") and.push({ titleIsDraft: true });
   if (param(sp, "pendingLong")) {
-    const days = Number(param(sp, "pendingLong")) || 7;
-    and.push({ status: "pending_customer", statusChangedAt: { lt: new Date(Date.now() - days * 86_400_000) } });
+    // 与提醒同一口径：进入待客户确认的上海日历日距今超过 N 天
+    const days = Math.max(0, Number(param(sp, "pendingLong")) || 7);
+    and.push({ status: "pending_customer", statusChangedAt: { lt: shanghaiDayStart(addDays(todayShanghai(), -days)) } });
   }
+  const createdTo = param(sp, "createdTo");
+  if (isYmd(createdTo)) and.push({ createdAt: { lt: shanghaiDayStart(addDays(createdTo, 1)) } });
   const tag = param(sp, "tag");
   if (tag) and.push({ tags: { some: { tag: { nameLc: tag.toLowerCase() } } } });
 
@@ -107,6 +114,8 @@ export const issueListInclude = {
   assignees: { include: { user: { select: { id: true, displayName: true } } } },
   tags: { include: { tag: true } },
   entries: { where: { withdrawnAt: null }, orderBy: { createdAt: "desc" as const }, select: { kind: true, body: true } },
+  linksFrom: { select: { toIssue: { select: { id: true, customerSeq: true } } } },
+  linksTo: { select: { fromIssue: { select: { id: true, customerSeq: true } } } },
   _count: { select: { evidences: { where: { hiddenAt: null } } } },
 } satisfies Prisma.IssueInclude;
 

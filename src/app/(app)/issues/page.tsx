@@ -64,6 +64,7 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
 
       <form className="filters" method="get">
         {statusParam && <input type="hidden" name="status" value={statusParam} />}
+        {["dueSoon", "pendingLong", "createdTo"].map((k) => param(sp, k) && <input key={k} type="hidden" name={k} value={param(sp, k)} />)}
         <input type="search" name="q" defaultValue={param(sp, "q")} placeholder="关键词（标题、问题点、解决案、备注）" style={{ minWidth: 260 }} />
         {sel("customer", customers.map((c) => ({ v: c.id, l: c.status === "archived" ? `${c.name}（归档）` : c.name })), "全部客户")}
         {sel("priority", priorities.map((p) => ({ v: p.id, l: p.label })), "优先级")}

@@ -27,6 +27,8 @@ export async function saveSettingsAction(_p: FormState, fd: FormData): Promise<F
     memberCanCreateCustomer: fd.get("memberCanCreateCustomer") === "on",
     maxImageMb: s(fd, "maxImageMb"),
     maxAttachmentMb: s(fd, "maxAttachmentMb"),
+    loginMaxFailures: s(fd, "loginMaxFailures"),
+    loginLockMinutes: s(fd, "loginLockMinutes"),
   });
   if (!parsed.success) return { error: firstError(parsed.error) };
   const { maxImageMb, maxAttachmentMb, ...rest } = parsed.data;

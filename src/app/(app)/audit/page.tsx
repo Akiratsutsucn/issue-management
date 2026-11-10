@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import Link from "next/link";
 import { fmtDateTime } from "@/lib/dates";
 import { prisma } from "@/lib/server/db";
@@ -9,6 +10,7 @@ const ENTITY: Record<string, string> = {
 };
 
 export default async function AuditPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  await requireUser();
   const sp = await searchParams;
   const entity = param(sp, "entity");
   const onlyException = param(sp, "exception") === "1";

@@ -1,3 +1,4 @@
+import { requireUser } from "@/lib/server/auth";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ActionForm from "@/components/ActionForm";
@@ -6,6 +7,7 @@ import { prisma } from "@/lib/server/db";
 import { saveMeetingAction } from "../../../actions";
 
 export default async function NewMeetingPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireUser();
   const { id } = await params;
   const customer = await prisma.customer.findUnique({ where: { id }, include: { contacts: { orderBy: { name: "asc" } } } });
   if (!customer) notFound();

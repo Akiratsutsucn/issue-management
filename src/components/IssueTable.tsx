@@ -4,6 +4,7 @@ import { dateToYmd, fmtDateTime, todayShanghai } from "@/lib/dates";
 import { CONFIRM_SHORT, LIST_COLUMNS, WAITING_LABEL, type ColumnKey } from "@/lib/labels";
 import { richToText } from "@/lib/sanitize";
 import { UNFINISHED } from "@/lib/status";
+import { prisma } from "@/lib/server/db";
 import { latestEntry, type IssueListRow } from "@/lib/server/issue-query";
 import { PriorityPill, StatusPill, TitleText } from "./Pills";
 
@@ -13,7 +14,7 @@ const clip = (html: string) => {
   return t ? <span className="clip">{t}</span> : "—";
 };
 
-function cell(k: ColumnKey, r: IssueListRow, today: string): React.ReactNode {
+function cell(k: ColumnKey, r: IssueListRow, today: string, names: Map<string, string>): React.ReactNode {
   switch (k) {
     case "seq":
       return <Link href={`/issues/${r.id}`} className="num">#{r.customerSeq}</Link>;
@@ -71,6 +72,20 @@ function cell(k: ColumnKey, r: IssueListRow, today: string): React.ReactNode {
       return <span className="num">{dash(dateToYmd(r.firstAnsweredAt))}</span>;
     case "completedAt":
       return <span className="num">{dash(dateToYmd(r.completedAt))}</span>;
+    case "confirmation":
+      return r.completionConfirmName ? <span className="nowrap">{r.completionConfirmName} <span className="num small muted">{dateToYmd(r.completionConfirmedAt)}</span></span> : "—";
+    case "evidence":
+      return <span className="num">{r._count.evidences}</span>;
+    case "links": {
+      const other = [...r.linksFrom.map((l) => l.toIssue), ...r.linksTo.map((l) => l.fromIssue)];
+      return other.length ? <span className="row">{other.map((o) => <Link key={o.id} href={`/issues/${o.id}`} className="num">#{o.customerSeq}</Link>)}</span> : "—";
+    }
+    case "internalNote":
+      return clip(r.internalNote);
+    case "createdBy":
+      return dash(names.get(r.createdById) ?? "");
+    case "updatedBy":
+      return dash(names.get(r.updatedById) ?? "");
   }
 }
 
@@ -81,8 +96,11 @@ interface Props {
   empty?: React.ReactNode;
 }
 
-export default function IssueTable({ rows, columns, selectable = false, empty }: Props) {
+export default async function IssueTable({ rows, columns, selectable = false, empty }: Props) {
   const today = todayShanghai();
+  const needNames = columns.includes("createdBy") || columns.includes("updatedBy");
+  const users = needNames ? await prisma.user.findMany({ select: { id: true, displayName: true } }) : [];
+  const names = new Map(users.map((u) => [u.id, u.displayName]));
   const label = (k: ColumnKey) => LIST_COLUMNS.find((c) => c.key === k)?.label ?? k;
   return (
     <div className="table-wrap">
@@ -106,7 +124,7 @@ export default function IssueTable({ rows, columns, selectable = false, empty }:
                     <input type="checkbox" name="ids" value={r.id} form="bulk-form" aria-label={`选择 #${r.customerSeq}`} />
                   </td>
                 )}
-                {columns.map((k) => <td key={k}>{cell(k, r, today)}</td>)}
+                {columns.map((k) => <td key={k}>{cell(k, r, today, names)}</td>)}
               </tr>
             ))
           )}

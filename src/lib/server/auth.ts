@@ -40,7 +40,7 @@ export function validatePasswordStrength(pw: string): string | null {
 
 export type LoginResult = { ok: true } | { ok: false; error: string };
 
-const GENERIC_FAIL = "邮箱或密码不正确";
+const GENERIC_FAIL = "邮箱或密码不正确，或尝试过多已临时锁定";
 
 export async function login(emailRaw: string, password: string): Promise<LoginResult> {
   const email = emailRaw.trim().toLowerCase();
@@ -51,21 +51,21 @@ export async function login(emailRaw: string, password: string): Promise<LoginRe
     return { ok: false, error: GENERIC_FAIL };
   }
   if (user.lockedUntil && user.lockedUntil > now) {
-    return { ok: false, error: "尝试次数过多，请稍后再试" };
+    // 锁定时与普通失败同一提示，不暴露邮箱是否存在
+    await bcrypt.compare(password, await getDummyHash());
+    return { ok: false, error: GENERIC_FAIL };
   }
   const match = await bcrypt.compare(password, user.passwordHash);
   if (!match) {
     const s = await getSettings();
-    const failed = user.failedLogins + 1;
-    const lock = failed >= s.loginMaxFailures;
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        failedLogins: lock ? 0 : failed,
-        lockedUntil: lock ? new Date(now.getTime() + s.loginLockMinutes * 60_000) : user.lockedUntil,
-      },
-    });
+    // 原子自增，防止并发请求绕过计数
+    const after = await prisma.user.update({ where: { id: user.id }, data: { failedLogins: { increment: 1 } } });
+    const lock = after.failedLogins >= s.loginMaxFailures;
     if (lock) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { failedLogins: 0, lockedUntil: new Date(now.getTime() + s.loginLockMinutes * 60_000) },
+      });
       await prisma.auditLog.create({ data: { entityType: "user", entityId: user.id, action: "login_locked", summary: "连续登录失败，临时锁定" } });
     }
     return { ok: false, error: GENERIC_FAIL };
